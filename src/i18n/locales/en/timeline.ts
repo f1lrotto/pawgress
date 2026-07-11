@@ -1,0 +1,37 @@
+const timeline = {
+  peePlace: { inside: "Inside", outside: "Outside" },
+  amount: "Amount: {{amount}}",
+  boundary: "Day boundary: {{timezone}}",
+  clearFilters: "Clear filters",
+  duration: "Duration: {{duration}}",
+  empty: "No entries on this day.",
+  emptyAction: "Log an activity",
+  end: "End of this day’s notes.",
+  filter: "Filter events",
+  filteredEmpty: "No entries match these filters.",
+  intro:
+    "Read {{name}}’s meals, rest, walks, play, and garden notes on one quiet page.",
+  invalid:
+    "We couldn't read this timeline day. Check the date and {{name}}’s timezone.",
+  kinds: {
+    meal: "Meal",
+    note: "Note",
+    pee: "Pee",
+    play: "Play",
+    poop: "Poop",
+    sleep: "Fell asleep",
+    treat: "Treat",
+    wake: "Woke up",
+    walk: "Walk",
+  },
+  linkedWalk: "Linked walk {{id}}",
+  loadMore: "Load older entries",
+  loading: "Opening this day’s field notes…",
+  loadingMore: "Loading older entries",
+  duringWalk: "During walk",
+  title: "Day by day.",
+  timeline: "Timeline",
+  timelineDate: "Timeline date",
+} as const;
+
+export default timeline;

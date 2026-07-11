@@ -1,0 +1,11 @@
+node_modules
+dist
+coverage
+output/playwright
+.playwright-cli
+.env.local
+.DS_Store
+.convex
+
+# Convex deployment configuration is machine-specific.
+.env
