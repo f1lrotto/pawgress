@@ -36,6 +36,8 @@ const convex = vi.hoisted(() => ({
   recent: [] as unknown[] | undefined,
   remove: vi.fn(),
   routines: [] as unknown[] | undefined,
+  trainingCommands: [] as unknown[] | undefined,
+  trainingLog: vi.fn(),
   update: vi.fn(),
   walkEnd: vi.fn(),
   walkStart: vi.fn(),
@@ -49,6 +51,7 @@ vi.mock("convex/react", () => ({
     if (name === "walks:updateDiary") return convex.diaryUpdate;
     if (name === "walks:start") return convex.walkStart;
     if (name === "walks:end") return convex.walkEnd;
+    if (name === "training:logSessions") return convex.trainingLog;
     return name === "events:update" ? convex.update : convex.remove;
   },
   useQuery: (reference: unknown, args: unknown) => {
@@ -59,6 +62,7 @@ vi.mock("convex/react", () => ({
     if (name === "agenda:get") return convex.agenda;
     if (name === "events:latestByKind") return convex.latest;
     if (name === "walks:active") return convex.activeWalk;
+    if (name === "training:list") return convex.trainingCommands;
     return convex.routines;
   },
 }));
@@ -147,6 +151,9 @@ beforeEach(() => {
   convex.remove.mockReset();
   convex.remove.mockResolvedValue(null);
   convex.routines = [];
+  convex.trainingCommands = [];
+  convex.trainingLog.mockReset();
+  convex.trainingLog.mockResolvedValue(["session-id"]);
   convex.update.mockReset();
   convex.update.mockResolvedValue(null);
   convex.walkEnd.mockReset();
@@ -156,6 +163,52 @@ beforeEach(() => {
 });
 
 describe("DashboardPage quick logging", () => {
+  it("logs selected training commands with a quick assessment", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(123_456);
+    convex.trainingCommands = [
+      { _id: "sit-id", name: "Sit" },
+      { _id: "stay-id", name: "Stay" },
+    ];
+    HTMLDialogElement.prototype.showModal = function () {
+      this.open = true;
+    };
+    HTMLDialogElement.prototype.close = function () {
+      this.open = false;
+      this.dispatchEvent(new Event("close"));
+    };
+    render(<DashboardPage dog={dog} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Log training" }));
+    const dialog = screen.getByRole("dialog", { name: "Log training" });
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "Sit" }));
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "Stay" }));
+    fireEvent.click(within(dialog).getByRole("radio", { name: "Thumbs up" }));
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Save training" }),
+    );
+
+    await waitFor(() =>
+      expect(convex.trainingLog).toHaveBeenCalledWith({
+        dogId,
+        commandIds: ["sit-id", "stay-id"],
+        at: 123_456,
+        rating: 5,
+      }),
+    );
+    expect(dialog).not.toHaveAttribute("open");
+  });
+
+  it("links to training setup when there are no active commands", () => {
+    HTMLDialogElement.prototype.showModal = function () {
+      this.open = true;
+    };
+    render(<DashboardPage dog={dog} />);
+    fireEvent.click(screen.getByRole("button", { name: "Log training" }));
+    expect(
+      screen.getByRole("link", { name: "Set up training commands" }),
+    ).toHaveAttribute("href", "/training");
+  });
+
   it("connects every quick action to its state description", () => {
     render(<DashboardPage dog={dog} />);
     const quickLog = screen
