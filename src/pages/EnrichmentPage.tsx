@@ -145,7 +145,7 @@ function ActivityShelf({
                       className="w-8 min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-center text-xl leading-7"
                       aria-hidden="true"
                     >
-                      {activity.emoji ?? "✦"}
+                      {activity.emoji ?? "🐾"}
                     </span>
                     <h3 className="min-w-0 break-words font-semibold leading-6 [overflow-wrap:anywhere]">
                       {activity.name}
@@ -247,7 +247,7 @@ function ActivityShelf({
                 className="flex min-w-0 flex-col gap-3 py-3 min-[400px]:flex-row min-[400px]:items-center min-[400px]:justify-between"
               >
                 <span className="min-w-0 break-words text-sm font-semibold [overflow-wrap:anywhere]">
-                  <span aria-hidden="true">{activity.emoji ?? "✦"} </span>
+                  <span aria-hidden="true">{activity.emoji ?? "🐾"} </span>
                   {activity.name}
                 </span>
                 <Button

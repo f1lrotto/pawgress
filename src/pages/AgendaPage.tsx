@@ -699,7 +699,7 @@ function ReadonlyGoals({ goals, title }: { goals: Goal[]; title: string }) {
               className="flex min-w-0 items-start gap-2 py-2 text-sm"
             >
               <span aria-hidden="true" className="font-semibold text-primary">
-                {goal.done ? "✓" : "○"}
+                {goal.done ? "✅" : "⭕"}
               </span>
               <span className="sr-only">
                 {t(

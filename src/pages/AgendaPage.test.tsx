@@ -534,11 +534,11 @@ describe("AgendaPage", () => {
     expect(completeRow).not.toBeNull();
     expect(
       completeRow?.querySelector('[aria-hidden="true"]'),
-    ).toHaveTextContent("✓");
+    ).toHaveTextContent("✅");
     expect(within(completeRow!).getByText("Complete")).toHaveClass("sr-only");
     expect(openRow).not.toBeNull();
     expect(openRow?.querySelector('[aria-hidden="true"]')).toHaveTextContent(
-      "○",
+      "⭕",
     );
     expect(within(openRow!).getByText("Open")).toHaveClass("sr-only");
     expect(within(history).getByText("Quiet cafe visit")).toBeVisible();

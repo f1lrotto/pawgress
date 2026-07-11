@@ -124,7 +124,7 @@ function StepProgress({ step }: { step: Step }) {
               aria-hidden="true"
               className={`grid size-8 shrink-0 place-items-center rounded-full border border-current text-sm ${step === number ? "bg-foreground text-background" : ""}`}
             >
-              {completed ? "✓" : number}
+              {completed ? "✅" : number}
             </span>
             <span>{t(label)}</span>
             {completed && (

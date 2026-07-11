@@ -130,11 +130,11 @@ const mergeRecentState = (state: RecentState, patch: Partial<RecentState>) => ({
 
 const quickActions = [
   { kind: "pee", icon: "💧" },
-  { kind: "poop", icon: "●" },
-  { kind: "meal", icon: "◒" },
-  { kind: "treat", icon: "✦" },
-  { kind: "wake", icon: "☀" },
-  { kind: "sleep", icon: "☾" },
+  { kind: "poop", icon: "💩" },
+  { kind: "meal", icon: "🍽️" },
+  { kind: "treat", icon: "🦴" },
+  { kind: "wake", icon: "☀️" },
+  { kind: "sleep", icon: "😴" },
 ] as const satisfies ReadonlyArray<{
   kind: QuickKind;
   icon: string;
@@ -1389,7 +1389,7 @@ function QuickLogSection({
               <div key={kind} className="min-h-24 bg-card px-3 py-3 sm:px-4">
                 <span className="flex items-center gap-2.5">
                   <span
-                    className="w-4 shrink-0 text-center text-sm leading-none"
+                    className="w-5 shrink-0 text-center text-base leading-none"
                     aria-hidden="true"
                   >
                     {icon}
@@ -1455,7 +1455,7 @@ function QuickLogSection({
             >
               <span className="flex items-center gap-2.5">
                 <span
-                  className="w-4 shrink-0 text-center text-sm leading-none"
+                  className="w-5 shrink-0 text-center text-base leading-none"
                   aria-hidden="true"
                 >
                   {icon}
@@ -1679,7 +1679,7 @@ function TrainingQuickLog({
                           }}
                         />
                         <span aria-hidden="true" className="text-xl">
-                          {value === 1 ? "👎" : value === 3 ? "●" : "👍"}
+                          {value === 1 ? "👎" : value === 3 ? "😐" : "👍"}
                         </span>
                         <span className="sr-only">
                           {t(`training.rating${value}`)}

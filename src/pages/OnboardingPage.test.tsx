@@ -172,7 +172,7 @@ describe("OnboardingPage", () => {
     enterPuppy();
     expect(steps[0]).not.toHaveAttribute("aria-current");
     expect(steps[0]).toHaveTextContent("Completed");
-    expect(within(steps[0]).getByText("✓")).toBeInTheDocument();
+    expect(within(steps[0]).getByText("✅")).toBeInTheDocument();
     expect(steps[1]).toHaveAttribute("aria-current", "step");
     expect(
       screen.getByRole("heading", { name: "Add a starting point." }),
