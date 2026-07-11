@@ -42,6 +42,7 @@ type RecentEvents = FunctionReturnType<typeof api.events.listRecent>;
 type RecentEvent = RecentEvents[number];
 type ActivityTypes = FunctionReturnType<typeof api.activityTypes.list>;
 type AgendaDay = FunctionReturnType<typeof api.agenda.get>;
+type TrainingCommands = FunctionReturnType<typeof api.training.list>;
 const countCompleted = (goals: ReadonlyArray<{ done: boolean }>) =>
   goals.filter(({ done }) => done).length;
 type ActivityTypesById = ReadonlyMap<
@@ -1308,6 +1309,7 @@ function QuickLogSection({
   pendingOperation,
   sleepState,
   timeFormatter,
+  trainingCommands,
 }: {
   activeWalk: ActiveWalk | undefined;
   dog: DashboardDog;
@@ -1335,6 +1337,7 @@ function QuickLogSection({
   pendingOperation: PendingOperation;
   sleepState: SleepState | undefined;
   timeFormatter: Intl.DateTimeFormat;
+  trainingCommands: TrainingCommands | undefined;
 }) {
   const { t } = useTranslation("dashboard");
   const isBusy = pendingOperation !== null;
@@ -1357,7 +1360,7 @@ function QuickLogSection({
       <div
         role="group"
         aria-labelledby="quick-log-title"
-        className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-3 lg:grid-cols-6"
+        className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-4 lg:grid-cols-7"
       >
         {quickActions.map(({ icon, kind }) => {
           const label = t(`events.${kind}`);
@@ -1474,6 +1477,7 @@ function QuickLogSection({
             </button>
           );
         })}
+        <TrainingQuickLog dog={dog} commands={trainingCommands} />
       </div>
 
       <WalkControls
@@ -1527,6 +1531,187 @@ function QuickLogSection({
         </div>
       )}
     </section>
+  );
+}
+
+function TrainingQuickLog({
+  commands,
+  dog,
+}: {
+  commands: TrainingCommands | undefined;
+  dog: DashboardDog;
+}) {
+  const { t } = useTranslation("dashboard");
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const openerRef = useRef<HTMLButtonElement>(null);
+  const logSessions = useMutation(api.training.logSessions);
+  const [selected, setSelected] = useState<Array<Id<"trainingCommands">>>([]);
+  const [rating, setRating] = useState<number | null>(null);
+  const [error, setError] = useState("");
+  const [isPending, setIsPending] = useState(false);
+
+  const close = () => dialogRef.current?.close();
+  const reset = () => {
+    setSelected([]);
+    setRating(null);
+    setError("");
+    setIsPending(false);
+    openerRef.current?.focus();
+  };
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (selected.length === 0) return setError(t("training.selectCommand"));
+    if (rating === null) return setError(t("training.selectAssessment"));
+    setIsPending(true);
+    setError("");
+    try {
+      await logSessions({
+        dogId: dog._id,
+        commandIds: selected,
+        at: Date.now(),
+        rating,
+      });
+      close();
+    } catch {
+      setError(t("training.saveError"));
+      setIsPending(false);
+    }
+  };
+
+  return (
+    <>
+      <button
+        ref={openerRef}
+        type="button"
+        aria-label={t("training.openAria")}
+        aria-describedby="quick-state-training"
+        className="min-h-24 bg-card px-3 py-3 text-left transition-colors duration-150 hover:bg-accent active:bg-muted focus-visible:z-10 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring sm:px-4"
+        onClick={() => dialogRef.current?.showModal()}
+      >
+        <span className="flex items-center gap-2.5">
+          <span aria-hidden="true" className="w-4 shrink-0 text-center text-sm">
+            ◆
+          </span>
+          <strong className="text-sm leading-5 sm:text-base">
+            {t("training.label")}
+          </strong>
+        </span>
+        <span
+          id="quick-state-training"
+          className="mt-2 block text-sm leading-5 text-muted-foreground"
+        >
+          {commands === undefined ? t("common.checking") : t("training.choose")}
+        </span>
+      </button>
+      <dialog
+        ref={dialogRef}
+        aria-labelledby="training-dialog-title"
+        className="m-auto w-[min(32rem,calc(100%-2rem))] rounded-xl border border-border bg-card p-0 text-foreground shadow-xl backdrop:bg-foreground/40"
+        onClose={reset}
+        onCancel={(event) => isPending && event.preventDefault()}
+      >
+        <form className="p-5 sm:p-6" onSubmit={(event) => void submit(event)}>
+          <fieldset disabled={isPending} className="m-0 border-0 p-0">
+            <legend id="training-dialog-title" className="text-xl font-bold">
+              {t("training.title")}
+            </legend>
+            {commands?.length === 0 ? (
+              <div className="mt-4">
+                <p className="text-sm text-muted-foreground">
+                  {t("training.empty")}
+                </p>
+                <Link
+                  className="mt-3 inline-block text-sm font-bold underline underline-offset-4"
+                  to="/training"
+                  onClick={close}
+                >
+                  {t("training.setup")}
+                </Link>
+              </div>
+            ) : (
+              <>
+                <fieldset className="mt-5">
+                  <legend className="text-sm font-bold">
+                    {t("training.commands")}
+                  </legend>
+                  <div className="mt-2 grid max-h-52 gap-2 overflow-y-auto">
+                    {commands?.map((command) => (
+                      <label
+                        key={command._id}
+                        className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border border-border px-3 py-2 has-[:checked]:bg-secondary"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selected.includes(command._id)}
+                          onChange={() => {
+                            setSelected((current) =>
+                              current.includes(command._id)
+                                ? current.filter((id) => id !== command._id)
+                                : [...current, command._id],
+                            );
+                            setError("");
+                          }}
+                        />
+                        <span className="font-semibold">{command.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+                <fieldset className="mt-5">
+                  <legend className="text-sm font-bold">
+                    {t("training.assessment")}
+                  </legend>
+                  <div className="mt-2 grid grid-cols-3 gap-2">
+                    {([1, 3, 5] as const).map((value) => (
+                      <label
+                        key={value}
+                        className="flex min-h-12 cursor-pointer items-center justify-center rounded-lg border border-border px-2 has-[:checked]:bg-secondary"
+                      >
+                        <input
+                          className="sr-only"
+                          type="radio"
+                          name="training-rating"
+                          value={value}
+                          checked={rating === value}
+                          onChange={() => {
+                            setRating(value);
+                            setError("");
+                          }}
+                        />
+                        <span aria-hidden="true" className="text-xl">
+                          {value === 1 ? "👎" : value === 3 ? "●" : "👍"}
+                        </span>
+                        <span className="sr-only">
+                          {t(`training.rating${value}`)}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+              </>
+            )}
+            {error && (
+              <p
+                role="alert"
+                className="mt-4 text-sm font-bold text-destructive"
+              >
+                {error}
+              </p>
+            )}
+            <div className="mt-6 grid grid-cols-2 gap-3">
+              <Button type="button" variant="secondary" onClick={close}>
+                {t("common.cancel")}
+              </Button>
+              {commands !== undefined && commands.length > 0 && (
+                <Button type="submit">
+                  {isPending ? t("common.saving") : t("training.save")}
+                </Button>
+              )}
+            </div>
+          </fieldset>
+        </form>
+      </dialog>
+    </>
   );
 }
 
@@ -2217,6 +2402,10 @@ function DashboardPage({ dog }: { dog: DashboardDog }) {
   const latest = useQuery(api.events.latestByKind, { dogId: dog._id });
   const activeWalk = useQuery(api.walks.active, { dogId: dog._id });
   const routines = useQuery(api.routines.list, { dogId: dog._id });
+  const trainingCommands = useQuery(api.training.list, {
+    dogId: dog._id,
+    limit: 100,
+  });
   const logQuick = useMutation(api.events.logQuick);
   const logPotty = useMutation(api.walks.logPotty);
   const removeEvent = useMutation(api.events.remove);
@@ -2473,6 +2662,7 @@ function DashboardPage({ dog }: { dog: DashboardDog }) {
           pendingOperation={pendingOperation}
           sleepState={sleepState}
           timeFormatter={timeFormatter}
+          trainingCommands={trainingCommands}
         />
         <RecentActivity
           activityTypesById={activityTypesById}

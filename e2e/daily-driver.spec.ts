@@ -243,6 +243,28 @@ test("a household can log and manage live activity", async ({
     commandDetail.getByRole("button", { name: "Set status Learning" }),
   ).toHaveAttribute("aria-pressed", "true");
 
+  await createCommand.getByLabel("Command name").fill("Stay");
+  await createCommand.getByRole("button", { name: "Add command" }).click();
+  await page
+    .getByRole("navigation", { name: "Notebook sections" })
+    .getByRole("link", { name: "Today" })
+    .click();
+  await page.getByRole("button", { name: "Log training" }).click();
+  const quickTraining = page.getByRole("dialog", { name: "Log training" });
+  await quickTraining.getByRole("checkbox", { name: "Recall" }).check();
+  await quickTraining.getByRole("checkbox", { name: "Stay" }).check();
+  await quickTraining.getByRole("radio", { name: "Thumbs up" }).check();
+  await quickTraining.getByRole("button", { name: "Save training" }).click();
+  await expect(quickTraining).not.toBeVisible();
+  await page
+    .getByRole("navigation", { name: "Notebook sections" })
+    .getByRole("link", { name: "Training" })
+    .click();
+  await page.getByRole("link", { name: "Open Recall" }).click();
+  await expect(
+    page.getByRole("list", { name: "Training sessions" }),
+  ).toContainText("5 / 5");
+
   await secondPage
     .getByRole("navigation", { name: "Notebook sections" })
     .getByRole("link", { name: "Training" })

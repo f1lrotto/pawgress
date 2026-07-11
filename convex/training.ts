@@ -297,3 +297,43 @@ export const logSession = dogMutation({
     });
   },
 });
+
+export const logSessions = dogMutation({
+  args: {
+    commandIds: v.array(v.id("trainingCommands")),
+    at: v.number(),
+    rating: v.number(),
+  },
+  returns: v.array(v.id("trainingSessions")),
+  handler: async (ctx, { dogId, commandIds, at, rating }) => {
+    if (
+      commandIds.length === 0 ||
+      commandIds.length > maxCommands ||
+      new Set(commandIds).size !== commandIds.length
+    ) {
+      throw new ConvexError("INVALID_COMMANDS");
+    }
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+      throw new ConvexError("INVALID_RATING");
+    }
+    const dog = await ctx.db.get("dogs", dogId);
+    if (dog === null) throw new ConvexError("DOG_NOT_FOUND");
+    const validatedAt = validateDogTimestamp(at, dog);
+    const commands = await Promise.all(
+      commandIds.map((commandId) => requireCommand(ctx, dogId, commandId)),
+    );
+    if (commands.some(({ isArchived }) => isArchived)) {
+      throw new ConvexError("COMMAND_ARCHIVED");
+    }
+    return Promise.all(
+      commandIds.map((commandId) =>
+        ctx.db.insert("trainingSessions", {
+          dogId,
+          commandId,
+          at: validatedAt,
+          rating,
+        }),
+      ),
+    );
+  },
+});

@@ -424,4 +424,70 @@ describe("training", () => {
     });
     expect(detail.sessions.map(({ rating }) => rating)).toEqual([3, 2]);
   });
+
+  it("logs several commands atomically with one assessment", async () => {
+    const { owner, dogId, otherDogId, t } = await setup();
+    const [sitId, stayId, archivedId, otherId] = await Promise.all([
+      owner.mutation(api.training.create, { dogId, name: "Sit" }),
+      owner.mutation(api.training.create, { dogId, name: "Stay" }),
+      owner.mutation(api.training.create, { dogId, name: "Archived" }),
+      owner.mutation(api.training.create, { dogId: otherDogId, name: "Other" }),
+    ]);
+    await owner.mutation(api.training.setArchived, {
+      dogId,
+      commandId: archivedId,
+      isArchived: true,
+    });
+
+    const ids = await owner.mutation(api.training.logSessions, {
+      dogId,
+      commandIds: [sitId, stayId],
+      at: firstSessionAt,
+      rating: 5,
+    });
+    expect(ids).toHaveLength(2);
+    expect(
+      await t.run(({ db }) =>
+        db
+          .query("trainingSessions")
+          .withIndex("by_dog_at", (q) => q.eq("dogId", dogId))
+          .collect(),
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        commandId: sitId,
+        at: firstSessionAt,
+        rating: 5,
+      }),
+      expect.objectContaining({
+        commandId: stayId,
+        at: firstSessionAt,
+        rating: 5,
+      }),
+    ]);
+
+    for (const commandIds of [
+      [],
+      [sitId, sitId],
+      [sitId, archivedId],
+      [sitId, otherId],
+    ]) {
+      await expect(
+        owner.mutation(api.training.logSessions, {
+          dogId,
+          commandIds,
+          at: firstSessionAt + 1,
+          rating: 3,
+        }),
+      ).rejects.toThrow();
+    }
+    expect(
+      await t.run(({ db }) =>
+        db
+          .query("trainingSessions")
+          .withIndex("by_dog_at", (q) => q.eq("dogId", dogId))
+          .collect(),
+      ),
+    ).toHaveLength(2);
+  });
 });
