@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { formatDate, formatNumber } from "@/i18n/format";
 import type { Locale } from "@/i18n/locale";
 import { formatElapsed, getElapsedMs } from "@/lib/timers";
+import { EventEditor } from "@/pages/DashboardPage";
 import {
   formatZonedDateTimeLocal,
   getZonedDayKeys,
@@ -61,10 +62,18 @@ function TimelineRow({
   activityTypesById,
   dog,
   event,
+  isEditing,
+  onCancelEdit,
+  onEdit,
+  onSaved,
 }: {
   activityTypesById: ActivityTypesById;
   dog: TimelineDog;
   event: TimelineEvent;
+  isEditing: boolean;
+  onCancelEdit: () => void;
+  onEdit: () => void;
+  onSaved: (label: string) => void;
 }) {
   const { i18n, t } = useTranslation("timeline");
   const locale = i18n.resolvedLanguage as Locale;
@@ -85,36 +94,58 @@ function TimelineRow({
         {time}
       </time>
       <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-2">
-          <h3 className="break-words text-base font-semibold leading-6 [overflow-wrap:anywhere]">
-            {label}
-          </h3>
-          {event.kind === "pee" && event.peePlace && (
-            <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-semibold text-muted-foreground">
-              {t(`peePlace.${event.peePlace}`)}
-            </span>
-          )}
-          {event.walkId !== undefined && (
-            <span
-              title={t("linkedWalk", { id: event.walkId })}
-              className="rounded-full bg-secondary px-2.5 py-1 text-xs font-semibold text-muted-foreground"
+        {isEditing ? (
+          <div className="rounded-lg bg-muted/70 p-4">
+            <EventEditor
+              dog={dog}
+              event={event}
+              onCancel={onCancelEdit}
+              onSaved={onSaved}
+            />
+          </div>
+        ) : (
+          <>
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="break-words text-base font-semibold leading-6 [overflow-wrap:anywhere]">
+                {label}
+              </h3>
+              {event.kind === "pee" && event.peePlace && (
+                <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-semibold text-muted-foreground">
+                  {t(`peePlace.${event.peePlace}`)}
+                </span>
+              )}
+              {event.walkId !== undefined && (
+                <span
+                  title={t("linkedWalk", { id: event.walkId })}
+                  className="rounded-full bg-secondary px-2.5 py-1 text-xs font-semibold text-muted-foreground"
+                >
+                  {t("duringWalk")}
+                </span>
+              )}
+            </div>
+            <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-sm leading-5 text-muted-foreground">
+              {duration && <span>{t("duration", { duration })}</span>}
+              {event.amount !== undefined && (
+                <span>
+                  {t("amount", { amount: formatNumber(event.amount, locale) })}
+                </span>
+              )}
+            </div>
+            {event.note && (
+              <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-6 text-muted-foreground [overflow-wrap:anywhere]">
+                {event.note}
+              </p>
+            )}
+            <Button
+              type="button"
+              variant="secondary"
+              className="mt-3"
+              aria-label={t("editAria", { event: label, time })}
+              onClick={onEdit}
             >
-              {t("duringWalk")}
-            </span>
-          )}
-        </div>
-        <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-sm leading-5 text-muted-foreground">
-          {duration && <span>{t("duration", { duration })}</span>}
-          {event.amount !== undefined && (
-            <span>
-              {t("amount", { amount: formatNumber(event.amount, locale) })}
-            </span>
-          )}
-        </div>
-        {event.note && (
-          <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-6 text-muted-foreground [overflow-wrap:anywhere]">
-            {event.note}
-          </p>
+              {t("edit")}
+            </Button>
+          </>
         )}
       </div>
     </li>
@@ -129,6 +160,8 @@ function TimelinePage({ dog }: { dog: TimelineDog }) {
   const [date, setDate] = useState(initialDate);
   const [dateDirty, setDateDirty] = useState(false);
   const [kinds, setKinds] = useState<EventKind[]>([]);
+  const [editId, setEditId] = useState<Id<"events"> | null>(null);
+  const [status, setStatus] = useState("");
 
   useEffect(() => {
     if (dateDirty) return;
@@ -259,6 +292,12 @@ function TimelinePage({ dog }: { dog: TimelineDog }) {
             : t("timeline")}
         </h2>
 
+        {status && (
+          <p role="status" className="mt-4 text-sm font-bold text-primary">
+            {status}
+          </p>
+        )}
+
         {!dayWindow ? (
           <p
             role="alert"
@@ -293,6 +332,16 @@ function TimelinePage({ dog }: { dog: TimelineDog }) {
                     activityTypesById={activityTypesById}
                     dog={dog}
                     event={event}
+                    isEditing={editId === event._id}
+                    onCancelEdit={() => setEditId(null)}
+                    onEdit={() => {
+                      setEditId(event._id);
+                      setStatus("");
+                    }}
+                    onSaved={(label) => {
+                      setEditId(null);
+                      setStatus(t("updated", { event: label }));
+                    }}
                   />
                 ))}
               </ol>

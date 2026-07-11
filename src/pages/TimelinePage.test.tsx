@@ -4,6 +4,7 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
   within,
 } from "@testing-library/react";
 import { getFunctionName } from "convex/server";
@@ -17,6 +18,7 @@ import TimelinePage from "./TimelinePage";
 const convex = vi.hoisted(() => ({
   activityTypes: [] as unknown[] | undefined,
   loadMore: vi.fn(),
+  update: vi.fn(),
   paginatedCalls: [] as Array<{
     args: unknown;
     name: string;
@@ -29,6 +31,7 @@ const convex = vi.hoisted(() => ({
 }));
 
 vi.mock("convex/react", () => ({
+  useMutation: () => convex.update,
   usePaginatedQuery: (reference: unknown, args: unknown, options: unknown) => {
     convex.paginatedCalls.push({
       args,
@@ -86,6 +89,7 @@ beforeEach(async () => {
   await setLocale("en");
   convex.activityTypes = [];
   convex.loadMore.mockReset();
+  convex.update.mockReset();
   convex.paginatedCalls = [];
   convex.queryCalls = [];
   convex.results = [];
@@ -440,6 +444,30 @@ describe("TimelinePage", () => {
       "Linked walk walk-id",
     );
     expect(within(rows[3]).getByText("Play")).toBeVisible();
+  });
+
+  it("edits a timeline entry with the shared event editor", async () => {
+    convex.results = [event({ note: "Before" })];
+    convex.update.mockResolvedValue(undefined);
+    renderPage();
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit Pee at 10:00" }));
+    const editor = screen.getByRole("form", { name: "Edit Pee event" });
+    fireEvent.change(within(editor).getByLabelText(/Note/), {
+      target: { value: "After" },
+    });
+    fireEvent.click(
+      within(editor).getByRole("button", { name: "Save changes" }),
+    );
+
+    await waitFor(() =>
+      expect(convex.update).toHaveBeenCalledWith({
+        dogId,
+        eventId: "event-id",
+        note: "After",
+      }),
+    );
+    expect(await screen.findByRole("status")).toHaveTextContent("Pee updated.");
   });
 
   it("does not block timeline rows while activity names load", () => {

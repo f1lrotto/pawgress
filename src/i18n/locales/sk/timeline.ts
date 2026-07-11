@@ -7,6 +7,8 @@ const timeline = {
   boundary: "Hranica dňa: {{timezone}}",
   clearFilters: "Zrušiť filtre",
   duration: "Trvanie: {{duration}}",
+  edit: "Upraviť",
+  editAria: "Upraviť {{event}} o {{time}}",
   empty: "V tento deň tu nie sú žiadne záznamy.",
   emptyAction: "Zaznamenať aktivitu",
   end: "Koniec záznamov z tohto dňa.",
@@ -35,6 +37,7 @@ const timeline = {
   title: "Deň za dňom.",
   timeline: "Časová os",
   timelineDate: "Dátum časovej osi",
+  updated: "{{event}} bolo upravené.",
 } as const satisfies CatalogShape<typeof timelineEn>;
 
 export default timeline;

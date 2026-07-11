@@ -4,6 +4,8 @@ const timeline = {
   boundary: "Day boundary: {{timezone}}",
   clearFilters: "Clear filters",
   duration: "Duration: {{duration}}",
+  edit: "Edit",
+  editAria: "Edit {{event}} at {{time}}",
   empty: "No entries on this day.",
   emptyAction: "Log an activity",
   end: "End of this day’s notes.",
@@ -32,6 +34,7 @@ const timeline = {
   title: "Day by day.",
   timeline: "Timeline",
   timelineDate: "Timeline date",
+  updated: "{{event}} updated.",
 } as const;
 
 export default timeline;

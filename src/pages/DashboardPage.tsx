@@ -1582,7 +1582,7 @@ function EditDateTimeField({
   );
 }
 
-function EventEditor({
+export function EventEditor({
   dog,
   event,
   onCancel,
