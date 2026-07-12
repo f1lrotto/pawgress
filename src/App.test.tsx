@@ -400,7 +400,7 @@ describe("App auth routing", () => {
       await screen.findByRole("heading", { name: "Hello, Milo." }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("heading", { name: "What just happened?" }),
+      screen.getByRole("heading", { name: "Log an activity" }),
     ).toBeInTheDocument();
   });
 
@@ -572,10 +572,11 @@ describe("App auth routing", () => {
           ...(path === "/agenda" ? { level: 1 } : {}),
         }),
       ).toBeInTheDocument();
-      expect(screen.getByRole("link", { name: tab })).toHaveAttribute(
-        "aria-current",
-        "page",
-      );
+      screen
+        .getAllByRole("link", { name: tab })
+        .forEach((link) =>
+          expect(link).toHaveAttribute("aria-current", "page"),
+        );
       expect(screen.getByTestId("location")).toHaveTextContent(`${path}:POP`);
     },
   );

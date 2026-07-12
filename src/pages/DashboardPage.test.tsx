@@ -212,10 +212,10 @@ describe("DashboardPage quick logging", () => {
   it("connects every quick action to its state description", () => {
     render(<DashboardPage dog={dog} />);
     const quickLog = screen
-      .getByRole("heading", { level: 2, name: "What just happened?" })
+      .getByRole("heading", { level: 2, name: "Log an activity" })
       .closest("section")!;
     const actionGroup = within(quickLog).getByRole("group", {
-      name: "What just happened?",
+      name: "Log an activity",
     });
 
     ["Pee", "Poop", "Meal", "Treat", "Woke up", "Fell asleep"].forEach(
@@ -303,6 +303,55 @@ describe("DashboardPage quick logging", () => {
     },
   );
 
+  it("logs quick activities at a selected earlier time", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-07-09T12:00:00Z"));
+    render(<DashboardPage dog={dog} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Earlier" }));
+    fireEvent.click(screen.getByRole("button", { name: "30 min ago" }));
+    fireEvent.click(screen.getByRole("button", { name: "Log Meal" }));
+
+    await waitFor(() =>
+      expect(convex.log).toHaveBeenCalledWith({
+        at: Date.parse("2026-07-09T11:30:00Z"),
+        dogId,
+        kind: "meal",
+      }),
+    );
+    expect(screen.getByText("Activity time · 11:30 AM")).toBeVisible();
+  });
+
+  it("uses the selected earlier time for training logs", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-07-09T12:00:00Z"));
+    convex.trainingCommands = [{ _id: "sit-id", name: "Sit" }];
+    HTMLDialogElement.prototype.showModal = function () {
+      this.open = true;
+    };
+    HTMLDialogElement.prototype.close = function () {
+      this.open = false;
+      this.dispatchEvent(new Event("close"));
+    };
+    render(<DashboardPage dog={dog} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Earlier" }));
+    fireEvent.click(screen.getByRole("button", { name: "Log training" }));
+    const dialog = screen.getByRole("dialog", { name: "Log training" });
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "Sit" }));
+    fireEvent.click(within(dialog).getByRole("radio", { name: "Neutral" }));
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Save training" }),
+    );
+
+    await waitFor(() =>
+      expect(convex.trainingLog).toHaveBeenCalledWith({
+        at: Date.parse("2026-07-09T11:45:00Z"),
+        commandIds: ["sit-id"],
+        dogId,
+        rating: 3,
+      }),
+    );
+  });
+
   it("locks all quick actions and prevents duplicate submissions", async () => {
     let finish!: () => void;
     convex.log.mockImplementation(
@@ -323,7 +372,7 @@ describe("DashboardPage quick logging", () => {
     expect(screen.getByRole("button", { name: "Log Pee" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Start walk" })).toBeDisabled();
     expect(
-      screen.getByRole("button", { name: "Log another time" }),
+      screen.getByRole("button", { name: "Log with details" }),
     ).toBeDisabled();
     expect(convex.log).toHaveBeenCalledTimes(1);
 
@@ -386,7 +435,7 @@ describe("DashboardPage quick logging", () => {
     ).toBeDisabled();
     expect(screen.getByRole("button", { name: "Log Pee" })).toBeDisabled();
     expect(
-      screen.getByRole("button", { name: "Log another time" }),
+      screen.getByRole("button", { name: "Log with details" }),
     ).toBeDisabled();
     expect(convex.remove).toHaveBeenCalledTimes(1);
 
@@ -412,7 +461,7 @@ describe("DashboardPage quick logging", () => {
 
     expect(await screen.findByRole("button", { name: "Undo" })).toBeDisabled();
     expect(
-      screen.getByRole("button", { name: "Log another time" }),
+      screen.getByRole("button", { name: "Log with details" }),
     ).toBeDisabled();
     finish();
     await waitFor(() =>
@@ -530,7 +579,7 @@ describe("DashboardPage sleep controls", () => {
   it("maps a backdated sequence conflict to the datetime field", async () => {
     convex.log.mockRejectedValue(new Error("INVALID_REST_TRANSITION"));
     render(<DashboardPage dog={dog} />);
-    fireEvent.click(screen.getByRole("button", { name: "Log another time" }));
+    fireEvent.click(screen.getByRole("button", { name: "Log with details" }));
     fireEvent.change(screen.getByLabelText("What happened?"), {
       target: { value: "sleep" },
     });
@@ -644,7 +693,7 @@ describe("DashboardPage walk controls", () => {
     expect(screen.getByRole("button", { name: "Log Pee" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
     expect(
-      screen.getByRole("button", { name: "Log another time" }),
+      screen.getByRole("button", { name: "Log with details" }),
     ).toBeDisabled();
 
     finish();
@@ -773,7 +822,7 @@ describe("DashboardPage walk controls", () => {
     expect(screen.getByRole("button", { name: "Start walk" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Log Pee" })).toBeDisabled();
     expect(
-      screen.getByRole("button", { name: "Log another time" }),
+      screen.getByRole("button", { name: "Log with details" }),
     ).toBeDisabled();
     expect(convex.walkStart).toHaveBeenCalledTimes(1);
     expect(convex.log).not.toHaveBeenCalled();
@@ -1135,7 +1184,7 @@ describe("DashboardPage walk potty attachment", () => {
     expect(pee).toHaveTextContent("During walk · Logging…");
     expect(screen.getByRole("button", { name: "End walk" })).toBeDisabled();
     expect(
-      screen.getByRole("button", { name: "Log another time" }),
+      screen.getByRole("button", { name: "Log with details" }),
     ).toBeDisabled();
     expect(convex.pottyLog).toHaveBeenCalledTimes(1);
 
@@ -1149,7 +1198,7 @@ describe("DashboardPage walk potty attachment", () => {
     convex.activeWalk = walk;
     convex.latest!.walk = walk;
     render(<DashboardPage dog={dog} />);
-    fireEvent.click(screen.getByRole("button", { name: "Log another time" }));
+    fireEvent.click(screen.getByRole("button", { name: "Log with details" }));
     fireEvent.change(screen.getByLabelText("When did it happen?"), {
       target: { value: "2026-07-09T11:00" },
     });
@@ -1179,7 +1228,7 @@ describe("DashboardPage walk potty attachment", () => {
     convex.activeWalk = walk;
     convex.latest!.walk = walk;
     render(<DashboardPage dog={dog} />);
-    fireEvent.click(screen.getByRole("button", { name: "Log another time" }));
+    fireEvent.click(screen.getByRole("button", { name: "Log with details" }));
     fireEvent.change(screen.getByLabelText("When did it happen?"), {
       target: { value: "2026-07-09T11:00" },
     });
@@ -1203,7 +1252,7 @@ describe("DashboardPage walk potty attachment", () => {
     convex.activeWalk = walk;
     convex.latest!.walk = walk;
     render(<DashboardPage dog={dog} />);
-    fireEvent.click(screen.getByRole("button", { name: "Log another time" }));
+    fireEvent.click(screen.getByRole("button", { name: "Log with details" }));
     fireEvent.change(screen.getByLabelText("When did it happen?"), {
       target: { value: "2026-07-09T09:00" },
     });
@@ -1235,7 +1284,7 @@ describe("DashboardPage walk potty attachment", () => {
     convex.latest!.walk = walk;
     convex.pottyLog.mockRejectedValue(new Error("WALK_NOT_ACTIVE"));
     render(<DashboardPage dog={dog} />);
-    fireEvent.click(screen.getByRole("button", { name: "Log another time" }));
+    fireEvent.click(screen.getByRole("button", { name: "Log with details" }));
     fireEvent.change(screen.getByLabelText("When did it happen?"), {
       target: { value: "2026-07-09T11:00" },
     });
@@ -1262,7 +1311,7 @@ describe("DashboardPage walk potty attachment", () => {
     convex.latest!.walk = walk;
     convex.pottyLog.mockRejectedValue(new Error("INVALID_WALK_TIMESTAMP"));
     render(<DashboardPage dog={dog} />);
-    fireEvent.click(screen.getByRole("button", { name: "Log another time" }));
+    fireEvent.click(screen.getByRole("button", { name: "Log with details" }));
     fireEvent.change(screen.getByLabelText("When did it happen?"), {
       target: { value: "2026-07-09T11:00" },
     });
@@ -1434,7 +1483,7 @@ describe("DashboardPage active walk diary", () => {
     expect(screen.getByRole("button", { name: "End walk" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Log Pee" })).toBeDisabled();
     expect(
-      screen.getByRole("button", { name: "Log another time" }),
+      screen.getByRole("button", { name: "Log with details" }),
     ).toBeDisabled();
     expect(convex.diaryUpdate).toHaveBeenCalledTimes(1);
     expect(convex.walkEnd).not.toHaveBeenCalled();
@@ -1597,7 +1646,7 @@ describe("DashboardPage active walk identity scoping", () => {
     convex.activeWalk = walkA;
     convex.latest!.walk = walkA;
     const { rerender } = render(<DashboardPage dog={dog} />);
-    fireEvent.click(screen.getByRole("button", { name: "Log another time" }));
+    fireEvent.click(screen.getByRole("button", { name: "Log with details" }));
     fireEvent.change(screen.getByLabelText("When did it happen?"), {
       target: { value: "2026-07-09T10:00" },
     });
@@ -1612,7 +1661,7 @@ describe("DashboardPage active walk identity scoping", () => {
     expect(
       screen.queryByRole("form", { name: "Backdated event" }),
     ).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Log another time" }));
+    fireEvent.click(screen.getByRole("button", { name: "Log with details" }));
     expect(screen.getByLabelText("When did it happen?")).toHaveValue(
       "2026-07-09T12:00",
     );
@@ -1840,7 +1889,7 @@ describe("DashboardPage backdating", () => {
     vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-07-09T00:05:42Z"));
     render(<DashboardPage dog={{ ...dog, timezone: "Asia/Tokyo" }} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Log another time" }));
+    fireEvent.click(screen.getByRole("button", { name: "Log with details" }));
 
     expect(screen.getByLabelText("When did it happen?")).toHaveValue(
       "2026-07-09T09:05",
@@ -1851,7 +1900,7 @@ describe("DashboardPage backdating", () => {
   it("submits a normalized backdated payload", async () => {
     vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-07-09T12:00:00Z"));
     render(<DashboardPage dog={dog} />);
-    fireEvent.click(screen.getByRole("button", { name: "Log another time" }));
+    fireEvent.click(screen.getByRole("button", { name: "Log with details" }));
     fireEvent.change(screen.getByLabelText("What happened?"), {
       target: { value: "meal" },
     });
@@ -1886,7 +1935,7 @@ describe("DashboardPage backdating", () => {
 
   it("shows amount only for meals and treats", () => {
     render(<DashboardPage dog={dog} />);
-    fireEvent.click(screen.getByRole("button", { name: "Log another time" }));
+    fireEvent.click(screen.getByRole("button", { name: "Log with details" }));
     const kind = screen.getByLabelText("What happened?");
 
     expect(screen.queryByLabelText(/Amount/)).not.toBeInTheDocument();
@@ -1898,7 +1947,7 @@ describe("DashboardPage backdating", () => {
 
   it("validates timestamp, note length, and amount bounds", () => {
     render(<DashboardPage dog={dog} />);
-    fireEvent.click(screen.getByRole("button", { name: "Log another time" }));
+    fireEvent.click(screen.getByRole("button", { name: "Log with details" }));
     fireEvent.change(screen.getByLabelText("What happened?"), {
       target: { value: "treat" },
     });
@@ -1947,7 +1996,7 @@ describe("DashboardPage backdating", () => {
         }),
     );
     render(<DashboardPage dog={dog} />);
-    fireEvent.click(screen.getByRole("button", { name: "Log another time" }));
+    fireEvent.click(screen.getByRole("button", { name: "Log with details" }));
     const submit = screen.getByRole("button", { name: "Log event" });
 
     fireEvent.click(submit);
@@ -1971,7 +2020,7 @@ describe("DashboardPage backdating", () => {
   it("preserves every form value after a backend failure", async () => {
     convex.log.mockRejectedValue(new Error("network"));
     render(<DashboardPage dog={dog} />);
-    fireEvent.click(screen.getByRole("button", { name: "Log another time" }));
+    fireEvent.click(screen.getByRole("button", { name: "Log with details" }));
     fireEvent.change(screen.getByLabelText("When did it happen?"), {
       target: { value: "2026-07-08T22:30" },
     });
@@ -1994,7 +2043,7 @@ describe("DashboardPage backdating", () => {
   it("validates backdated events against the birthday and future limit", () => {
     vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-07-09T12:00:00Z"));
     render(<DashboardPage dog={dog} />);
-    fireEvent.click(screen.getByRole("button", { name: "Log another time" }));
+    fireEvent.click(screen.getByRole("button", { name: "Log with details" }));
     const at = screen.getByLabelText("When did it happen?");
 
     fireEvent.change(at, { target: { value: "2024-01-14T23:59" } });
@@ -2018,7 +2067,7 @@ describe("DashboardPage backdating", () => {
   it("maps a backend timestamp rejection to the date field", async () => {
     convex.log.mockRejectedValue(new Error("INVALID_TIMESTAMP"));
     render(<DashboardPage dog={dog} />);
-    fireEvent.click(screen.getByRole("button", { name: "Log another time" }));
+    fireEvent.click(screen.getByRole("button", { name: "Log with details" }));
     fireEvent.click(screen.getByRole("button", { name: "Log event" }));
 
     expect(
@@ -2045,7 +2094,7 @@ describe("DashboardPage backdating", () => {
     fireEvent.click(screen.getByRole("button", { name: "Log Pee" }));
     await screen.findByText("Pee logged for Milo.");
 
-    fireEvent.click(screen.getByRole("button", { name: "Log another time" }));
+    fireEvent.click(screen.getByRole("button", { name: "Log with details" }));
     fireEvent.click(screen.getByRole("button", { name: "Log event" }));
 
     expect(await screen.findByRole("button", { name: "Undo" })).toBeDisabled();

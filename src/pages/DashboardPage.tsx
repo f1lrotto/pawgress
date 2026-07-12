@@ -139,6 +139,7 @@ const quickActions = [
   kind: QuickKind;
   icon: string;
 }>;
+const quickTimePresets = [5, 15, 30] as const;
 
 const walkFieldClassName = "field-control mt-2 w-full";
 const maxFutureMs = 5 * 60_000;
@@ -1340,22 +1341,137 @@ function QuickLogSection({
   trainingCommands: TrainingCommands | undefined;
 }) {
   const { t } = useTranslation("dashboard");
-  const isBusy = pendingOperation !== null;
+  const [logAt, setLogAt] = useState<number | null>(null);
+  const [selectedPreset, setSelectedPreset] = useState<number | null>(null);
+  const [customAt, setCustomAt] = useState("");
+  const [isCustomTimeOpen, setIsCustomTimeOpen] = useState(false);
+  const [timeError, setTimeError] = useState("");
+  const isBusy = pendingOperation !== null || Boolean(timeError);
   const activeWalkKey = activeWalk?._id ?? "no-active-walk";
-
+  const selectNow = () => {
+    setLogAt(null);
+    setSelectedPreset(null);
+    setCustomAt("");
+    setIsCustomTimeOpen(false);
+    setTimeError("");
+  };
+  const selectEarlier = (minutes = 15) => {
+    const at = Date.now() - minutes * 60_000;
+    setLogAt(at);
+    setSelectedPreset(minutes);
+    setCustomAt(formatZonedDateTimeLocal(at, dog.timezone) ?? "");
+    setTimeError("");
+  };
+  const selectCustomTime = (value: string) => {
+    const at = parseZonedDateTimeLocal(value, dog.timezone);
+    const nextError = getTimestampError(value, at, dog, Date.now(), t);
+    setCustomAt(value);
+    setSelectedPreset(null);
+    setTimeError(nextError);
+    if (!nextError && at !== null) setLogAt(at);
+  };
   return (
     <section aria-labelledby="quick-log-title" className="min-w-0">
-      <div className="flex items-baseline justify-between gap-4">
-        <h2
-          id="quick-log-title"
-          className="text-balance text-xl font-bold leading-[1.625rem]"
-        >
-          {t("quick.title")}
-        </h2>
-        <span className="hidden text-sm text-muted-foreground sm:block">
-          {t("quick.currentTime")}
-        </span>
-      </div>
+      <h2
+        id="quick-log-title"
+        className="text-balance text-xl font-bold leading-[1.625rem]"
+      >
+        {t("quick.title")}
+      </h2>
+
+      <fieldset
+        disabled={pendingOperation !== null}
+        className="mt-3 border-b border-border pb-4"
+      >
+        <legend className="text-sm font-bold">{t("quick.when")}</legend>
+        <div className="mt-2 grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-input bg-input sm:max-w-md">
+          <Button
+            type="button"
+            variant={logAt === null ? "primary" : "secondary"}
+            aria-pressed={logAt === null}
+            className="rounded-none border-0 px-3 text-sm"
+            onClick={selectNow}
+          >
+            {t("quick.now")}
+          </Button>
+          <Button
+            type="button"
+            variant={logAt !== null ? "primary" : "secondary"}
+            aria-pressed={logAt !== null}
+            className="rounded-none border-0 px-3 text-sm"
+            onClick={() => selectEarlier()}
+          >
+            {t("quick.earlier")}
+          </Button>
+        </div>
+
+        {logAt === null ? (
+          <p className="mt-2 text-sm text-muted-foreground">
+            {t("quick.currentTime")}
+          </p>
+        ) : (
+          <div className="mt-3">
+            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+              {quickTimePresets.map((minutes) => (
+                <Button
+                  key={minutes}
+                  type="button"
+                  variant="secondary"
+                  aria-pressed={selectedPreset === minutes}
+                  className="px-3 text-sm aria-pressed:border-primary aria-pressed:bg-secondary"
+                  onClick={() => selectEarlier(minutes)}
+                >
+                  {t("quick.minutesAgo", { count: minutes })}
+                </Button>
+              ))}
+              <Button
+                type="button"
+                variant="secondary"
+                aria-expanded={isCustomTimeOpen}
+                aria-controls="quick-custom-time"
+                className="px-3 text-sm"
+                onClick={() => setIsCustomTimeOpen((open) => !open)}
+              >
+                {t("quick.chooseTime")}
+              </Button>
+            </div>
+
+            {isCustomTimeOpen && (
+              <div id="quick-custom-time" className="mt-4">
+                <label htmlFor="quick-custom-at" className="text-sm font-bold">
+                  {t("quick.exactTime")}
+                </label>
+                <input
+                  id="quick-custom-at"
+                  type="datetime-local"
+                  step="60"
+                  value={customAt}
+                  aria-invalid={Boolean(timeError)}
+                  aria-describedby={timeError ? "quick-time-error" : undefined}
+                  className="field-control mt-2 w-full sm:max-w-sm"
+                  onChange={(event) => selectCustomTime(event.target.value)}
+                />
+                {timeError && (
+                  <p
+                    id="quick-time-error"
+                    role="alert"
+                    className="mt-2 text-sm text-destructive"
+                  >
+                    {timeError}
+                  </p>
+                )}
+              </div>
+            )}
+
+            <p
+              className="mt-3 text-sm text-muted-foreground"
+              aria-live="polite"
+            >
+              {t("quick.selectedTime", { time: timeFormatter.format(logAt) })}
+            </p>
+          </div>
+        )}
+      </fieldset>
 
       <div
         role="group"
@@ -1417,7 +1533,9 @@ function QuickLogSection({
                       aria-busy={pendingOperation === "pee"}
                       aria-describedby="quick-state-pee"
                       className="min-h-11 bg-muted px-2 text-xs font-semibold transition-colors hover:bg-accent focus-visible:z-10 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-60"
-                      onClick={() => onLog(kind, label, Date.now(), place)}
+                      onClick={() =>
+                        onLog(kind, label, logAt ?? Date.now(), place)
+                      }
                     >
                       {t(`peePlace.${place}`)}
                       <span className="sr-only">
@@ -1451,7 +1569,7 @@ function QuickLogSection({
               aria-describedby={`quick-state-${kind}`}
               aria-busy={pendingOperation === kind}
               className="min-h-24 bg-card px-3 py-3 text-left transition-colors duration-150 hover:bg-accent active:bg-muted focus-visible:z-10 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:bg-muted disabled:opacity-60 aria-busy:cursor-wait sm:px-4"
-              onClick={() => onLog(kind, label, Date.now())}
+              onClick={() => onLog(kind, label, logAt ?? Date.now())}
             >
               <span className="flex items-center gap-2.5">
                 <span
@@ -1477,7 +1595,12 @@ function QuickLogSection({
             </button>
           );
         })}
-        <TrainingQuickLog dog={dog} commands={trainingCommands} />
+        <TrainingQuickLog
+          at={logAt}
+          commands={trainingCommands}
+          disabled={isBusy}
+          dog={dog}
+        />
       </div>
 
       <WalkControls
@@ -1535,10 +1658,14 @@ function QuickLogSection({
 }
 
 function TrainingQuickLog({
+  at,
   commands,
+  disabled,
   dog,
 }: {
+  at: number | null;
   commands: TrainingCommands | undefined;
+  disabled: boolean;
   dog: DashboardDog;
 }) {
   const { t } = useTranslation("dashboard");
@@ -1568,7 +1695,7 @@ function TrainingQuickLog({
       await logSessions({
         dogId: dog._id,
         commandIds: selected,
-        at: Date.now(),
+        at: at ?? Date.now(),
         rating,
       });
       close();
@@ -1583,9 +1710,10 @@ function TrainingQuickLog({
       <button
         ref={openerRef}
         type="button"
+        disabled={disabled}
         aria-label={t("training.openAria")}
         aria-describedby="quick-state-training"
-        className="min-h-24 bg-card px-3 py-3 text-left transition-colors duration-150 hover:bg-accent active:bg-muted focus-visible:z-10 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring sm:px-4"
+        className="col-span-2 min-h-24 bg-card px-3 py-3 text-left transition-colors duration-150 hover:bg-accent active:bg-muted focus-visible:z-10 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring sm:col-span-2 sm:px-4 lg:col-span-1"
         onClick={() => dialogRef.current?.showModal()}
       >
         <span className="flex items-center gap-2.5">
@@ -2538,7 +2666,10 @@ function DashboardPage({ dog }: { dog: DashboardDog }) {
     const isPotty = isPottyKind(kind);
     const canAttach = kind !== "pee" || peePlace === "outside";
     if (isPotty && canAttach && activeWalk === undefined) return;
-    const attachedWalk = isPotty && canAttach ? activeWalk : null;
+    const attachedWalk =
+      isPotty && canAttach && activeWalk && at >= activeWalk.at
+        ? activeWalk
+        : null;
     if (!beginOperation(kind)) return;
     setFeedback("");
     setError("");

@@ -54,7 +54,7 @@ test("a household can log and manage live activity", async ({
     secondPage.getByRole("heading", { name: `Hello, ${dogName}.` }),
   ).toBeVisible();
 
-  const quickLog = page.getByRole("region", { name: "What just happened?" });
+  const quickLog = page.getByRole("region", { name: "Log an activity" });
   await quickLog.getByRole("button", { name: "Log Pee" }).click();
   await expect(quickLog.getByRole("status")).toContainText(
     `Pee logged for ${dogName}.`,
@@ -76,7 +76,7 @@ test("a household can log and manage live activity", async ({
     { timeout: 1_000 },
   );
 
-  await quickLog.getByRole("button", { name: "Log another time" }).click();
+  await quickLog.getByRole("button", { name: "Log with details" }).click();
   const backdated = quickLog.getByRole("form", { name: "Backdated event" });
   await backdated.getByLabel("What happened?").selectOption("treat");
   await backdated.getByLabel("When did it happen?").fill("2024-01-16T12:00");
@@ -157,7 +157,7 @@ test("a household can log and manage live activity", async ({
     { timeout: 1_000 },
   );
   const secondQuickLog = secondPage.getByRole("region", {
-    name: "What just happened?",
+    name: "Log an activity",
   });
   await expect(
     secondQuickLog.getByRole("button", { name: "Log Woke up" }),
@@ -548,7 +548,7 @@ test("a household can log and manage live activity", async ({
     const ownerPees = recentActivity(page).getByText("Pee", { exact: true });
     const peeCount = await ownerPees.count();
     const memberQuickLog = memberPage.getByRole("region", {
-      name: "What just happened?",
+      name: "Log an activity",
     });
     await memberQuickLog.getByRole("button", { name: "Log Pee" }).click();
     await expect(memberQuickLog.getByRole("status")).toContainText(
