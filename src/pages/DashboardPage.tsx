@@ -23,6 +23,7 @@ import { deriveSleepState, formatElapsed, getElapsedMs } from "@/lib/timers";
 import {
   formatZonedDateTimeLocal,
   getZonedDayKeys,
+  getZonedDayWindow,
   parseZonedDateTimeLocal,
 } from "@/lib/zonedDateTime";
 
@@ -43,6 +44,7 @@ type RecentEvent = RecentEvents[number];
 type ActivityTypes = FunctionReturnType<typeof api.activityTypes.list>;
 type AgendaDay = FunctionReturnType<typeof api.agenda.get>;
 type TrainingCommands = FunctionReturnType<typeof api.training.list>;
+type TrainingDay = FunctionReturnType<typeof api.training.listDay>;
 const countCompleted = (goals: ReadonlyArray<{ done: boolean }>) =>
   goals.filter(({ done }) => done).length;
 type ActivityTypesById = ReadonlyMap<
@@ -205,11 +207,19 @@ const hasErrorCode = (error: unknown, code: string) =>
 function RightNowSummary({
   isLoading,
   items,
+  training,
 }: {
   isLoading: boolean;
   items: Array<{ detail?: string; label: string; value: string }>;
+  training:
+    | Array<{ count: number; displayCount: string; id: string; name: string }>
+    | undefined;
 }) {
   const { t } = useTranslation("dashboard");
+  const maxTrainingCount = Math.max(
+    1,
+    ...(training?.map(({ count }) => count) ?? []),
+  );
   return (
     <section aria-labelledby="timers-title" className="pb-6">
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
@@ -225,35 +235,112 @@ function RightNowSummary({
           {t("timers.syncing")}
         </span>
       )}
-      <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-3 lg:grid-cols-6">
-        {items.map(({ detail, label, value }) => (
-          <div key={label} className="min-w-0 bg-card px-4 py-4">
-            <dt className="text-sm font-medium leading-5 text-muted-foreground">
-              {label}
-            </dt>
-            <dd className="mt-2">
-              {isLoading ? (
-                <span
-                  aria-hidden="true"
-                  className="block h-6 w-16 animate-pulse rounded bg-muted motion-reduce:animate-none"
-                />
-              ) : (
-                <span className="block text-xl font-bold leading-6">
-                  {value}
-                </span>
-              )}
-              {!isLoading && detail && (
-                <span className="mt-1 block truncate text-xs font-medium text-muted-foreground">
-                  {detail}
-                </span>
-              )}
-            </dd>
+      <div className="overflow-hidden rounded-xl border border-border bg-card">
+        <dl className="grid grid-cols-2 gap-px bg-border sm:grid-cols-3 lg:grid-cols-6">
+          {items.map(({ detail, label, value }) => (
+            <div key={label} className="min-w-0 bg-card px-4 py-4">
+              <dt className="text-sm font-medium leading-5 text-muted-foreground">
+                {label}
+              </dt>
+              <dd className="mt-2">
+                {isLoading ? (
+                  <span
+                    aria-hidden="true"
+                    className="block h-6 w-16 animate-pulse rounded bg-muted motion-reduce:animate-none"
+                  />
+                ) : (
+                  <span className="block text-xl font-bold leading-6">
+                    {value}
+                  </span>
+                )}
+                {!isLoading && detail && (
+                  <span className="mt-1 block truncate text-xs font-medium text-muted-foreground">
+                    {detail}
+                  </span>
+                )}
+              </dd>
+            </div>
+          ))}
+        </dl>
+        <div className="border-t border-border bg-secondary/60 px-4 py-4">
+          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+            <h3 className="text-balance text-sm font-semibold">
+              {t("timers.trainingToday")}
+            </h3>
+            <Link
+              to="/training"
+              className="-my-2 inline-flex min-h-11 items-center text-sm font-semibold text-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+            >
+              {t("timers.viewTraining")}
+            </Link>
           </div>
-        ))}
-      </dl>
+          {training === undefined ? (
+            <div className="mt-3">
+              <span role="status" className="sr-only">
+                {t("timers.trainingLoading")}
+              </span>
+              <span
+                aria-hidden="true"
+                className="block h-5 w-48 animate-pulse rounded bg-muted motion-reduce:animate-none"
+              />
+            </div>
+          ) : training.length === 0 ? (
+            <p className="mt-1 text-sm text-muted-foreground">
+              {t("timers.noTraining")}
+            </p>
+          ) : (
+            <ul className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(min(8rem,100%),1fr))] gap-x-6 gap-y-4">
+              {training.map(({ count, displayCount, id, name }) => (
+                <li key={id} className="min-w-0">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <span className="min-w-0 break-words text-sm font-medium [overflow-wrap:anywhere]">
+                      {name}
+                    </span>
+                    <span
+                      aria-label={t("timers.trainingCount", { count, name })}
+                      className="shrink-0 text-lg font-bold tabular-nums text-primary"
+                    >
+                      {displayCount}×
+                    </span>
+                  </div>
+                  <div
+                    aria-hidden="true"
+                    className="relative mt-2 h-1.5 overflow-hidden rounded-full bg-muted"
+                  >
+                    <span
+                      className="absolute inset-0 origin-left rounded-full bg-primary transition-transform duration-200 ease-out motion-reduce:transition-none"
+                      style={{
+                        transform: `scaleX(${count / maxTrainingCount})`,
+                      }}
+                    />
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
     </section>
   );
 }
+
+const countTraining = (sessions: TrainingDay, locale: string) =>
+  Array.from(
+    sessions.reduce((counts, { commandId, commandName }) => {
+      const current = counts.get(commandId);
+      counts.set(commandId, {
+        count: (current?.count ?? 0) + 1,
+        id: commandId,
+        name: commandName,
+      });
+      return counts;
+    }, new Map<string, { count: number; id: string; name: string }>()),
+  )
+    .map(([, item]) => item)
+    .sort(
+      (left, right) =>
+        right.count - left.count || left.name.localeCompare(right.name, locale),
+    );
 
 function AgendaSummary({ agenda }: { agenda: AgendaDay | undefined }) {
   const { t } = useTranslation(["dashboard", "agenda"]);
@@ -2544,6 +2631,19 @@ function DashboardPage({ dog }: { dog: DashboardDog }) {
   const [error, setError] = useState("");
   const [now, setNow] = useState<number | null>(null);
   const dayKeys = now === null ? null : getZonedDayKeys(now, dog.timezone);
+  const dayWindow = dayKeys
+    ? getZonedDayWindow(dayKeys.today, dog.timezone)
+    : null;
+  const trainingDay = useQuery(
+    api.training.listDay,
+    dayWindow
+      ? {
+          dogId: dog._id,
+          startAt: dayWindow.startAt,
+          endAt: dayWindow.endAt,
+        }
+      : "skip",
+  );
   const agenda = useQuery(
     api.agenda.get,
     dayKeys ? { dogId: dog._id, date: dayKeys.today } : "skip",
@@ -2644,6 +2744,16 @@ function DashboardPage({ dog }: { dog: DashboardDog }) {
             : t("timers.noWalk"),
     },
   ];
+  const trainingToday = useMemo(
+    () =>
+      trainingDay?.length === undefined
+        ? undefined
+        : countTraining(trainingDay, locale).map((item) => ({
+            ...item,
+            displayCount: formatNumber(item.count, locale),
+          })),
+    [locale, trainingDay],
+  );
 
   const beginOperation = (operation: Exclude<PendingOperation, null>) => {
     if (operationPending.current) return false;
@@ -2766,6 +2876,7 @@ function DashboardPage({ dog }: { dog: DashboardDog }) {
       <RightNowSummary
         isLoading={latest === undefined || routines === undefined}
         items={rightNowItems}
+        training={trainingToday}
       />
 
       <AgendaSummary agenda={agenda} />

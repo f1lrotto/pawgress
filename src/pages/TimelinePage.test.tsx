@@ -28,6 +28,7 @@ const convex = vi.hoisted(() => ({
   results: [] as unknown[],
   status: "Exhausted" as
     "LoadingFirstPage" | "CanLoadMore" | "LoadingMore" | "Exhausted",
+  trainingDay: [] as unknown[] | undefined,
 }));
 
 vi.mock("convex/react", () => ({
@@ -51,7 +52,9 @@ vi.mock("convex/react", () => ({
       args,
       name: getFunctionName(reference as never),
     });
-    return convex.activityTypes;
+    return getFunctionName(reference as never) === "training:listDay"
+      ? convex.trainingDay
+      : convex.activityTypes;
   },
 }));
 
@@ -94,6 +97,7 @@ beforeEach(async () => {
   convex.queryCalls = [];
   convex.results = [];
   convex.status = "Exhausted";
+  convex.trainingDay = [];
 });
 
 describe("TimelinePage", () => {
@@ -156,6 +160,14 @@ describe("TimelinePage", () => {
       options: { initialNumItems: 30 },
     });
     expect(convex.queryCalls).toEqual([
+      {
+        name: "training:listDay",
+        args: {
+          dogId,
+          startAt: Date.parse("2026-03-28T23:00:00Z"),
+          endAt: Date.parse("2026-03-29T22:00:00Z"),
+        },
+      },
       {
         name: "activityTypes:list",
         args: { dogId, includeArchived: true, limit: 100 },
@@ -295,6 +307,7 @@ describe("TimelinePage", () => {
       "walk",
       "play",
       "note",
+      "training",
     ]);
     for (const filter of filters) {
       filter.focus();
@@ -444,6 +457,72 @@ describe("TimelinePage", () => {
       "Linked walk walk-id",
     );
     expect(within(rows[3]).getByText("Play")).toBeVisible();
+  });
+
+  it("places grouped training sessions in chronological order and filters them", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.parse("2026-07-10T12:00:00Z"));
+    convex.results = [
+      event({ at: Date.parse("2026-07-10T10:00:00Z"), kind: "meal" }),
+    ];
+    convex.trainingDay = [
+      {
+        _creationTime: 1,
+        _id: "sit-session",
+        at: Date.parse("2026-07-10T11:00:00Z"),
+        commandId: "sit-id",
+        commandName: "Sit",
+        dogId,
+        rating: 5,
+      },
+      {
+        _creationTime: 1,
+        _id: "stay-session",
+        at: Date.parse("2026-07-10T11:00:00Z"),
+        commandId: "stay-id",
+        commandName: "Stay",
+        dogId,
+        rating: 5,
+      },
+      {
+        _creationTime: 1,
+        _id: "recall-session",
+        at: Date.parse("2026-07-10T09:00:00Z"),
+        commandId: "recall-id",
+        commandName: "Recall",
+        dogId,
+        notes: "Great focus outside.",
+        rating: 4,
+      },
+    ];
+    renderPage();
+
+    const rows = screen.getAllByRole("listitem");
+    expect(rows).toHaveLength(3);
+    expect(within(rows[0]).getByText("11:00")).toBeVisible();
+    expect(
+      within(rows[0]).getByRole("heading", { name: "Training" }),
+    ).toBeVisible();
+    expect(within(rows[0]).getByText("Sit, Stay")).toBeVisible();
+    expect(within(rows[0]).getByText("Rating 5/5")).toBeVisible();
+    expect(
+      within(rows[0]).getByRole("link", { name: "View training" }),
+    ).toHaveAttribute("href", "/training");
+    expect(
+      within(rows[1]).getByRole("heading", { name: "Meal" }),
+    ).toBeVisible();
+    expect(within(rows[2]).getByText("Great focus outside.")).toBeVisible();
+    expect(
+      within(rows[2]).getByRole("link", { name: "View training" }),
+    ).toHaveAttribute("href", "/training?command=recall-id#command-detail");
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Training" }));
+    expect(screen.getAllByRole("listitem")).toHaveLength(2);
+    expect(convex.paginatedCalls.at(-1)?.args).toEqual({
+      dogId,
+      startAt: Date.parse("2026-07-10T00:00:00Z"),
+      endAt: Date.parse("2026-07-11T00:00:00Z"),
+    });
   });
 
   it("edits a timeline entry with the shared event editor", async () => {

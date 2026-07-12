@@ -37,6 +37,7 @@ const convex = vi.hoisted(() => ({
   remove: vi.fn(),
   routines: [] as unknown[] | undefined,
   trainingCommands: [] as unknown[] | undefined,
+  trainingDay: [] as unknown[] | undefined,
   trainingLog: vi.fn(),
   update: vi.fn(),
   walkEnd: vi.fn(),
@@ -63,6 +64,7 @@ vi.mock("convex/react", () => ({
     if (name === "events:latestByKind") return convex.latest;
     if (name === "walks:active") return convex.activeWalk;
     if (name === "training:list") return convex.trainingCommands;
+    if (name === "training:listDay") return convex.trainingDay;
     return convex.routines;
   },
 }));
@@ -152,6 +154,7 @@ beforeEach(() => {
   convex.remove.mockResolvedValue(null);
   convex.routines = [];
   convex.trainingCommands = [];
+  convex.trainingDay = [];
   convex.trainingLog.mockReset();
   convex.trainingLog.mockResolvedValue(["session-id"]);
   convex.update.mockReset();
@@ -2525,6 +2528,46 @@ describe("DashboardPage activity", () => {
 });
 
 describe("DashboardPage timers", () => {
+  it("counts today’s training by command", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.parse("2026-07-09T12:00:00Z"));
+    convex.trainingDay = [
+      { commandId: "sit-id", commandName: "Sit" },
+      { commandId: "stay-id", commandName: "Stay" },
+      { commandId: "sit-id", commandName: "Sit" },
+    ];
+
+    render(<DashboardPage dog={dog} />);
+    act(() => vi.advanceTimersByTime(0));
+
+    const summary = screen.getByRole("region", { name: "Right now" });
+    const sitCount = within(summary).getByLabelText("Sit: 2 today");
+    const stayCount = within(summary).getByLabelText("Stay: 1 today");
+    expect(within(summary).getByText("Commands trained today")).toBeVisible();
+    expect(sitCount).toHaveTextContent("2×");
+    expect(stayCount).toHaveTextContent("1×");
+    expect(sitCount.closest("li")?.querySelector("[style]")).toHaveStyle({
+      transform: "scaleX(1)",
+    });
+    expect(stayCount.closest("li")?.querySelector("[style]")).toHaveStyle({
+      transform: "scaleX(0.5)",
+    });
+    expect(summary.querySelector("dl")?.parentElement).toContainElement(
+      within(summary).getByText("Commands trained today"),
+    );
+    expect(
+      within(summary).getByRole("link", { name: "View training" }),
+    ).toHaveAttribute("href", "/training");
+    expect(convex.queryCalls).toContainEqual({
+      name: "training:listDay",
+      args: {
+        dogId,
+        startAt: Date.parse("2026-07-09T00:00:00Z"),
+        endAt: Date.parse("2026-07-10T00:00:00Z"),
+      },
+    });
+  });
+
   it("derives event timers, the next meal, and current sleep state", () => {
     vi.useFakeTimers();
     const now = Date.parse("2026-07-09T12:00:00Z");

@@ -133,6 +133,58 @@ describe("training", () => {
     ]);
   });
 
+  it("lists a local-day window with command names", async () => {
+    const { owner, dogId } = await setup();
+    const sitId = await owner.mutation(api.training.create, {
+      dogId,
+      name: "Sit",
+    });
+    const stayId = await owner.mutation(api.training.create, {
+      dogId,
+      name: "Stay",
+    });
+    await Promise.all([
+      owner.mutation(api.training.logSession, {
+        dogId,
+        commandId: sitId,
+        at: firstSessionAt,
+        rating: 3,
+      }),
+      owner.mutation(api.training.logSession, {
+        dogId,
+        commandId: stayId,
+        at: firstSessionAt + 1_000,
+        rating: 5,
+      }),
+    ]);
+
+    expect(
+      await owner.query(api.training.listDay, {
+        dogId,
+        startAt: firstSessionAt,
+        endAt: firstSessionAt + 2_000,
+      }),
+    ).toEqual([
+      expect.objectContaining({
+        commandId: stayId,
+        commandName: "Stay",
+        rating: 5,
+      }),
+      expect.objectContaining({
+        commandId: sitId,
+        commandName: "Sit",
+        rating: 3,
+      }),
+    ]);
+    await expect(
+      owner.query(api.training.listDay, {
+        dogId,
+        startAt: 10,
+        endAt: 10,
+      }),
+    ).rejects.toThrow("INVALID_TRAINING_WINDOW");
+  });
+
   it("validates bounds and prevents normalized active-name duplicates", async () => {
     const { owner, dogId } = await setup();
 
