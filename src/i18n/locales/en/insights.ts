@@ -89,7 +89,7 @@ const insights = {
     potty: {
       caption: "Potty events by dog-local hour",
       description:
-        "Grouped hourly counts reveal the dog-local rhythm behind pee and poop breaks.",
+        "Pee location and poop events by local time. Small screens use two-hour windows.",
       empty:
         "No potty breaks were logged in the last 30 days. Log them to see when they usually happen.",
       hour: "Hour",

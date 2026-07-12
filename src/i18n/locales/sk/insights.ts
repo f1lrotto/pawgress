@@ -92,7 +92,7 @@ const insights = {
     potty: {
       caption: "Cikanie a kakanie podľa miestnej hodiny psa",
       description:
-        "Počty podľa hodín ukazujú miestny rytmus cikania a kakania.",
+        "Miesto cikania a kakanie podľa miestneho času. Malé obrazovky používajú dvojhodinové intervaly.",
       empty:
         "Za posledných 30 dní nebola zaznamenaná žiadna potreba. Zaznamenávajte ju a uvidíte, kedy zvyčajne prichádza.",
       hour: "Hodina",

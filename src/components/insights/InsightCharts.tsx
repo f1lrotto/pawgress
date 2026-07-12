@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Bar,
@@ -9,6 +9,7 @@ import {
   Line,
   LineChart,
   ResponsiveContainer,
+  Scatter,
   Tooltip,
   XAxis,
   YAxis,
@@ -42,6 +43,7 @@ const compareDate = (left: string, right: string) =>
 const chartClassName = "h-56 min-w-0 w-full sm:h-64";
 const listClassName =
   "mt-4 max-h-52 divide-y divide-border overflow-auto border-t border-border text-sm";
+const compactChartQuery = "(max-width: 479px)";
 const axisProps = {
   axisLine: { stroke: "var(--border)" },
   tick: { fill: "var(--muted-foreground)", fontSize: 12 },
@@ -49,23 +51,23 @@ const axisProps = {
 } as const;
 
 const useChartLocale = () => {
-  const translation = useTranslation("insights");
-  const locale = translation.i18n.resolvedLanguage as Locale;
+  const { i18n, t } = useTranslation("insights");
+  const locale = i18n.resolvedLanguage as Locale;
   const number = (value: number) => formatNumber(value, locale);
   const hourFormatter = useMemo(
     () =>
-      new Intl.NumberFormat(locale, {
+      new Intl.NumberFormat(i18n.resolvedLanguage, {
         style: "unit",
         unit: "hour",
         unitDisplay: "long",
       }),
-    [locale],
+    [i18n.resolvedLanguage],
   );
   return {
-    ...translation,
     hoursText: (value: number) => hourFormatter.format(value),
     locale,
     number,
+    t,
   };
 };
 
@@ -84,9 +86,25 @@ const ChartLegend = () => (
   />
 );
 
+const compactChartSnapshot = () =>
+  window.matchMedia?.(compactChartQuery).matches === true;
+const subscribeToCompactChart = (onChange: () => void) => {
+  const query = window.matchMedia?.(compactChartQuery);
+  query?.addEventListener("change", onChange);
+  return () => query?.removeEventListener("change", onChange);
+};
+const useCompactChart = () =>
+  useSyncExternalStore(
+    subscribeToCompactChart,
+    compactChartSnapshot,
+    () => false,
+  );
+
 const LocalizedTooltip = ({ locale }: { locale: Locale }) => (
   <Tooltip
-    formatter={(value) => formatNumber(Number(value), locale)}
+    formatter={(value, name) =>
+      name === "label" ? null : formatNumber(Number(value), locale)
+    }
     contentStyle={{
       backgroundColor: "var(--card)",
       border: "1px solid var(--border)",
@@ -190,6 +208,7 @@ export function PottyInsight({
   buckets: PottyBucket[];
   loading: boolean;
 }) {
+  const compact = useCompactChart();
   const { locale, number, t } = useChartLocale();
   const timeFormatter = useMemo(
     () =>
@@ -201,12 +220,48 @@ export function PottyInsight({
       }),
     [locale],
   );
+  const percentFormatter = useMemo(
+    () =>
+      new Intl.NumberFormat(locale, {
+        style: "percent",
+        maximumFractionDigits: 0,
+      }),
+    [locale],
+  );
   const data = [...buckets]
     .sort((left, right) => left.hour - right.hour)
     .map((bucket) => ({
       ...bucket,
       label: timeFormatter.format(Date.UTC(2000, 0, 1, bucket.hour)),
     }));
+  const chartData = compact
+    ? Array.from({ length: 12 }, (_, index) => {
+        const hour = index * 2;
+        const pair = data.filter(
+          (bucket) => bucket.hour >= hour && bucket.hour < hour + 2,
+        );
+        return pair.reduce(
+          (sum, bucket) => ({
+            hour,
+            label: timeFormatter.format(Date.UTC(2000, 0, 1, hour)),
+            peeInside: sum.peeInside + bucket.peeInside,
+            peeOutside: sum.peeOutside + bucket.peeOutside,
+            poop: sum.poop + bucket.poop,
+          }),
+          {
+            hour,
+            label: timeFormatter.format(Date.UTC(2000, 0, 1, hour)),
+            peeInside: 0,
+            peeOutside: 0,
+            poop: 0,
+          },
+        );
+      })
+    : data;
+  const plottedData = chartData.map((bucket) => ({
+    ...bucket,
+    poopMarker: bucket.poop || null,
+  }));
   const totals = data.reduce(
     (sum, bucket) => ({
       inside: sum.inside + bucket.peeInside,
@@ -217,10 +272,9 @@ export function PottyInsight({
   );
   const peeTotal = totals.inside + totals.outside;
   const hasEvents = peeTotal + totals.poop > 0;
-  const successRate = new Intl.NumberFormat(locale, {
-    style: "percent",
-    maximumFractionDigits: 0,
-  }).format(peeTotal ? totals.outside / peeTotal : 0);
+  const successRate = percentFormatter.format(
+    peeTotal ? totals.outside / peeTotal : 0,
+  );
 
   return (
     <ChartCard
@@ -256,11 +310,65 @@ export function PottyInsight({
               <dd className="mt-1 text-lg font-bold">{successRate}</dd>
             </div>
           </dl>
+          <div
+            aria-hidden="true"
+            className="mt-4 flex flex-wrap justify-center gap-x-4 gap-y-2 text-xs font-semibold text-muted-foreground sm:text-sm"
+          >
+            <span className="inline-flex items-center gap-1.5">
+              <span className="size-3 rounded-sm bg-chart-1" />
+              {t("charts.potty.outside")}
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <svg className="size-3" viewBox="0 0 12 12">
+                <rect width="12" height="12" rx="2" fill="var(--chart-3)" />
+                <path
+                  d="M-2 10 10-2M2 14 14 2"
+                  stroke="var(--card)"
+                  strokeWidth="2"
+                />
+              </svg>
+              {t("charts.potty.inside")}
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <svg className="size-3" viewBox="0 0 12 12">
+                <path
+                  d="m6 1 5 5-5 5-5-5Z"
+                  fill="var(--chart-4)"
+                  stroke="var(--foreground)"
+                  strokeWidth="1.25"
+                />
+              </svg>
+              {t("charts.potty.poop")}
+            </span>
+          </div>
           <div aria-hidden="true" className={chartClassName}>
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data} margin={{ left: 0, right: 8, top: 20 }}>
+              <ComposedChart
+                data={plottedData}
+                barCategoryGap="20%"
+                margin={{ left: 0, right: 8, top: 20 }}
+              >
+                <defs>
+                  <pattern
+                    id="potty-inside-hatch"
+                    width="6"
+                    height="6"
+                    patternUnits="userSpaceOnUse"
+                  >
+                    <rect width="6" height="6" fill="var(--chart-3)" />
+                    <path
+                      d="M-1 5 5-1M1 7 7 1"
+                      stroke="var(--card)"
+                      strokeOpacity="0.72"
+                    />
+                  </pattern>
+                </defs>
                 <ChartGrid />
-                <XAxis {...axisProps} dataKey="label" interval={3} />
+                <XAxis
+                  {...axisProps}
+                  dataKey="label"
+                  interval={compact ? 1 : 3}
+                />
                 <YAxis
                   {...axisProps}
                   allowDecimals={false}
@@ -268,26 +376,33 @@ export function PottyInsight({
                   tickFormatter={number}
                 />
                 <LocalizedTooltip locale={locale} />
-                <ChartLegend />
                 <Bar
-                  dataKey="peeInside"
-                  name={t("charts.potty.inside")}
-                  fill="var(--chart-2)"
-                  isAnimationActive={false}
-                />
-                <Bar
+                  barSize={compact ? 20 : 14}
                   dataKey="peeOutside"
                   name={t("charts.potty.outside")}
-                  fill="var(--chart-3)"
+                  fill="var(--chart-1)"
                   isAnimationActive={false}
+                  stackId="pee"
                 />
                 <Bar
-                  dataKey="poop"
-                  name={t("charts.potty.poop")}
+                  barSize={compact ? 20 : 14}
+                  dataKey="peeInside"
+                  name={t("charts.potty.inside")}
+                  fill="url(#potty-inside-hatch)"
+                  isAnimationActive={false}
+                  stackId="pee"
+                />
+                <Scatter
+                  dataKey="poopMarker"
                   fill="var(--chart-4)"
+                  legendType="diamond"
+                  name={t("charts.potty.poop")}
+                  shape="diamond"
+                  stroke="var(--foreground)"
+                  strokeWidth={1.5}
                   isAnimationActive={false}
                 />
-              </BarChart>
+              </ComposedChart>
             </ResponsiveContainer>
           </div>
           <div className="mt-4 max-h-52 overflow-auto border-t border-border">

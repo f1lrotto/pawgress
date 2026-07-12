@@ -47,8 +47,19 @@ vi.mock("@/components/BodyMetricsPanel", () => ({
 }));
 
 vi.mock("recharts", () => {
-  const Container = ({ children }: { children?: React.ReactNode }) => (
-    <div data-testid="chart-canvas">{children}</div>
+  const Container = ({
+    children,
+    data,
+  }: {
+    children?: React.ReactNode;
+    data?: unknown;
+  }) => (
+    <div
+      data-chart-data={data ? JSON.stringify(data) : undefined}
+      data-testid="chart-canvas"
+    >
+      {children}
+    </div>
   );
   const Mark = ({ name }: { name?: string }) =>
     name ? <span data-testid="chart-series">{name}</span> : null;
@@ -68,6 +79,7 @@ vi.mock("recharts", () => {
     Line: Mark,
     LineChart: Container,
     ResponsiveContainer: Container,
+    Scatter: Mark,
     Tooltip,
     XAxis: Mark,
     YAxis: Mark,
@@ -96,7 +108,10 @@ const emptyResults = () => {
   convex.walks = [];
 };
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 beforeEach(async () => {
   await setLocale("en");
@@ -312,6 +327,57 @@ describe("InsightsPage", () => {
     expect(screen.getAllByTestId("chart-canvas").length).toBeGreaterThanOrEqual(
       5,
     );
+  });
+
+  it("combines adjacent hours only in the compact visual chart", () => {
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn().mockReturnValue({
+        addEventListener: vi.fn(),
+        matches: true,
+        removeEventListener: vi.fn(),
+      }),
+    );
+    vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-07-10T12:00:00Z"));
+    emptyResults();
+    convex.potty = [
+      { hour: 2, peeInside: 1, peeOutside: 2, poop: 1 },
+      { hour: 3, peeInside: 2, peeOutside: 1, poop: 0 },
+    ];
+
+    renderPage();
+
+    const pottyChart = screen
+      .getAllByTestId("chart-canvas")
+      .find((element) => element.dataset.chartData?.includes("peeInside"));
+    const chartData = JSON.parse(
+      pottyChart?.dataset.chartData ?? "[]",
+    ) as Array<{
+      hour: number;
+      peeInside: number;
+      peeOutside: number;
+      poop: number;
+      poopMarker: number | null;
+    }>;
+    expect(chartData).toHaveLength(12);
+    expect(chartData[1]).toMatchObject({
+      hour: 2,
+      peeInside: 3,
+      peeOutside: 3,
+      poop: 1,
+      poopMarker: 1,
+    });
+
+    const table = screen.getByRole("table", {
+      name: "Potty events by dog-local hour",
+    });
+    expect(within(table).getAllByRole("row")).toHaveLength(3);
+    expect(
+      within(table).getByRole("row", { name: /02:00 1 2 1/ }),
+    ).toBeVisible();
+    expect(
+      within(table).getByRole("row", { name: /03:00 2 1 0/ }),
+    ).toBeVisible();
   });
 
   it("focuses a safe error surface and retries inside the app shell", () => {
