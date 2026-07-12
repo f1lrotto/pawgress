@@ -10,6 +10,7 @@ const settings = {
     insights: "Prehľady",
     enrichment: "Obohatenie",
     training: "Tréning",
+    more: "Viac",
     currentDog: "Aktuálny pes",
     currentDogNamed: "Aktuálny pes: {{dogName}}",
     settings: "Nastavenia",

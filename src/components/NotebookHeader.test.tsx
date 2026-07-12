@@ -38,36 +38,26 @@ describe("NotebookHeader", () => {
     const navigation = screen.getByRole("navigation", {
       name: "Notebook sections",
     });
+    const sectionLinks = Array.from(navigation.children).filter(
+      (element): element is HTMLAnchorElement =>
+        element instanceof HTMLAnchorElement,
+    );
 
-    expect(
-      within(navigation).getByRole("link", { name: "Today" }),
-    ).toHaveAttribute("href", "/");
-    expect(
-      within(navigation).getByRole("link", { name: "Agenda" }),
-    ).toHaveAttribute("href", "/agenda");
-    expect(
-      within(navigation).getByRole("link", { name: "Timeline" }),
-    ).toHaveAttribute("href", "/timeline");
-    expect(
-      within(navigation).getByRole("link", { name: "Insights" }),
-    ).toHaveAttribute("href", "/insights");
-    expect(
-      within(navigation).getByRole("link", { name: "Enrichment" }),
-    ).toHaveAttribute("href", "/enrichment");
-    expect(
-      within(navigation).getByRole("link", { name: "Training" }),
-    ).toHaveAttribute("href", "/training");
-    expect(
-      within(navigation)
-        .getAllByRole("link")
-        .map(({ textContent }) => textContent),
-    ).toEqual([
+    expect(sectionLinks.map(({ textContent }) => textContent)).toEqual([
       "Today",
       "Agenda",
       "Timeline",
       "Insights",
       "Enrichment",
       "Training",
+    ]);
+    expect(sectionLinks.map(({ pathname }) => pathname)).toEqual([
+      "/",
+      "/agenda",
+      "/timeline",
+      "/insights",
+      "/enrichment",
+      "/training",
     ]);
   });
 
@@ -89,24 +79,54 @@ describe("NotebookHeader", () => {
       "Enrichment",
       "Training",
     ]) {
-      const link = screen.getByRole("link", { name });
-      if (name === currentName)
-        expect(link).toHaveAttribute("aria-current", "page");
-      else expect(link).not.toHaveAttribute("aria-current");
+      for (const link of screen.getAllByRole("link", { name })) {
+        if (name === currentName)
+          expect(link).toHaveAttribute("aria-current", "page");
+        else expect(link).not.toHaveAttribute("aria-current");
+      }
     }
   });
 
-  it("keeps every section visible in a touch-sized mobile navigation", () => {
+  it("keeps primary sections visible and folds secondary sections into More", () => {
     renderAt("/");
     const navigation = screen.getByRole("navigation", {
       name: "Notebook sections",
     });
+    const more = within(navigation).getByText("More");
+    const disclosure = more.closest("details");
 
     expect(navigation).not.toHaveClass("overflow-x-auto");
-    for (const link of within(navigation).getAllByRole("link")) {
+    for (const name of ["Today", "Agenda", "Timeline"]) {
+      const link = within(navigation).getByRole("link", { name });
       expect(link).toBeVisible();
-      expect(link).toHaveClass("min-h-11");
+      expect(link).toHaveClass("inline-flex", "min-h-11");
     }
+    expect(disclosure).not.toHaveAttribute("open");
+    expect(more).toHaveClass("min-h-11");
+
+    fireEvent.click(more);
+
+    expect(disclosure).toHaveAttribute("open");
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(disclosure).not.toHaveAttribute("open");
+    expect(more).toHaveFocus();
+
+    fireEvent.click(more);
+    fireEvent.pointerDown(document.body);
+    expect(disclosure).not.toHaveAttribute("open");
+
+    fireEvent.click(more);
+    for (const name of ["Insights", "Enrichment", "Training"])
+      expect(
+        within(disclosure as HTMLElement).getByRole("link", { name }),
+      ).toHaveClass("min-h-11");
+
+    fireEvent.click(
+      within(disclosure as HTMLElement).getByRole("link", {
+        name: "Insights",
+      }),
+    );
+    expect(disclosure).not.toHaveAttribute("open");
   });
 
   it("marks Settings as the current page", () => {
@@ -131,9 +151,10 @@ describe("NotebookHeader", () => {
       "Enrichment",
       "Training",
     ]) {
-      const link = screen.getByRole("link", { name });
-      link.focus();
-      expect(link).toHaveFocus();
+      for (const link of screen.getAllByRole("link", { name })) {
+        link.focus();
+        expect(link).toHaveFocus();
+      }
     }
 
     const settings = screen.getByRole("link", { name: "Settings" });
@@ -231,10 +252,9 @@ describe("NotebookHeader", () => {
       "href",
       "/agenda",
     );
-    expect(screen.getByRole("link", { name: "Obohatenie" })).toHaveAttribute(
-      "href",
-      "/enrichment",
-    );
+    for (const link of screen.getAllByRole("link", { name: "Obohatenie" }))
+      expect(link).toHaveAttribute("href", "/enrichment");
+    expect(screen.getByText("Viac")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Nastavenia" })).toHaveAttribute(
       "aria-current",
       "page",

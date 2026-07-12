@@ -7,6 +7,7 @@ const settings = {
     insights: "Insights",
     enrichment: "Enrichment",
     training: "Training",
+    more: "More",
     currentDog: "Current dog",
     currentDogNamed: "Current dog: {{dogName}}",
     settings: "Settings",
