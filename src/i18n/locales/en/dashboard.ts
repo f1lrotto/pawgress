@@ -50,6 +50,11 @@ const dashboard = {
     currentWalk: "Current walk",
     sinceWalk: "Since last walk",
     noWalk: "No walk yet",
+    trainingToday: "Commands trained today",
+    trainingLoading: "Loading today’s training…",
+    noTraining: "No commands trained yet today.",
+    trainingCount: "{{name}}: {{count}} today",
+    viewTraining: "View training",
   },
   agenda: {
     kicker: "Daily field card",

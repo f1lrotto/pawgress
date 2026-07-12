@@ -23,6 +23,16 @@ type TimelineEvent = FunctionReturnType<
   typeof api.timeline.listDay
 >["page"][number];
 type EventKind = TimelineEvent["kind"];
+type TrainingDay = FunctionReturnType<typeof api.training.listDay>;
+type TimelineKind = EventKind | "training";
+type TrainingGroup = {
+  at: number;
+  commandIds: Array<Id<"trainingCommands">>;
+  commandNames: string[];
+  id: Id<"trainingSessions">;
+  notes?: string;
+  rating: number;
+};
 type ActivityTypes = FunctionReturnType<typeof api.activityTypes.list>;
 type ActivityTypesById = ReadonlyMap<
   Id<"activityTypes">,
@@ -39,7 +49,8 @@ const filterOptions = [
   "walk",
   "play",
   "note",
-] as const satisfies ReadonlyArray<EventKind>;
+  "training",
+] as const satisfies ReadonlyArray<TimelineKind>;
 const skeletonRows = [0, 1, 2] as const;
 
 const eventTime = (at: number, timezone: string) =>
@@ -57,6 +68,28 @@ const eventLabel = (
     ? [activity.emoji, activity.name].filter(Boolean).join(" ")
     : kindLabel("play");
 };
+
+const groupTrainingSessions = (sessions: TrainingDay) =>
+  Array.from(
+    sessions.reduce((groups, session) => {
+      const key = `${session.at}:${session.rating}:${session.notes ?? ""}`;
+      const group = groups.get(key);
+      if (group) {
+        group.commandIds.push(session.commandId);
+        group.commandNames.push(session.commandName);
+      } else {
+        groups.set(key, {
+          at: session.at,
+          commandIds: [session.commandId],
+          commandNames: [session.commandName],
+          id: session._id,
+          notes: session.notes,
+          rating: session.rating,
+        });
+      }
+      return groups;
+    }, new Map<string, TrainingGroup>()),
+  ).map(([, group]) => group);
 
 function TimelineRow({
   activityTypesById,
@@ -152,6 +185,56 @@ function TimelineRow({
   );
 }
 
+function TrainingTimelineRow({
+  dog,
+  training,
+}: {
+  dog: TimelineDog;
+  training: TrainingGroup;
+}) {
+  const { i18n, t } = useTranslation("timeline");
+  const locale = i18n.resolvedLanguage as Locale;
+  const time = eventTime(training.at, dog.timezone);
+  const href =
+    training.commandIds.length === 1
+      ? `/training?command=${training.commandIds[0]}#command-detail`
+      : "/training";
+
+  return (
+    <li className="grid min-w-0 gap-2 border-b border-border py-4 last:border-0 sm:grid-cols-[5.25rem_minmax(0,1fr)] sm:gap-5">
+      <time
+        dateTime={new Date(training.at).toISOString()}
+        className="text-base font-semibold tabular-nums text-foreground"
+      >
+        {time}
+      </time>
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="text-base font-semibold leading-6">
+            {t("kinds.training")}
+          </h3>
+          <span className="rounded-full bg-secondary px-2.5 py-1 text-xs font-semibold text-muted-foreground">
+            {t("trainingRating", {
+              rating: formatNumber(training.rating, locale),
+            })}
+          </span>
+        </div>
+        <p className="mt-1 break-words text-sm font-medium leading-5 [overflow-wrap:anywhere]">
+          {training.commandNames.join(", ")}
+        </p>
+        {training.notes && (
+          <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-6 text-muted-foreground [overflow-wrap:anywhere]">
+            {training.notes}
+          </p>
+        )}
+        <Button asChild variant="secondary" className="mt-3">
+          <Link to={href}>{t("openTraining")}</Link>
+        </Button>
+      </div>
+    </li>
+  );
+}
+
 function TimelinePage({ dog }: { dog: TimelineDog }) {
   const { i18n, t } = useTranslation("timeline");
   const locale = i18n.resolvedLanguage as Locale;
@@ -159,7 +242,7 @@ function TimelinePage({ dog }: { dog: TimelineDog }) {
     getZonedDayKeys(Date.now(), dog.timezone)?.today ?? "";
   const [date, setDate] = useState(initialDate);
   const [dateDirty, setDateDirty] = useState(false);
-  const [kinds, setKinds] = useState<EventKind[]>([]);
+  const [kinds, setKinds] = useState<TimelineKind[]>([]);
   const [editId, setEditId] = useState<Id<"events"> | null>(null);
   const [status, setStatus] = useState("");
 
@@ -175,6 +258,9 @@ function TimelinePage({ dog }: { dog: TimelineDog }) {
   }, [dateDirty, dog.timezone]);
 
   const dayWindow = getZonedDayWindow(date, dog.timezone);
+  const eventKinds = kinds.filter(
+    (kind): kind is EventKind => kind !== "training",
+  );
   const timeline = usePaginatedQuery(
     api.timeline.listDay,
     dayWindow
@@ -182,10 +268,20 @@ function TimelinePage({ dog }: { dog: TimelineDog }) {
           dogId: dog._id,
           startAt: dayWindow.startAt,
           endAt: dayWindow.endAt,
-          ...(kinds.length ? { kinds } : {}),
+          ...(eventKinds.length ? { kinds: eventKinds } : {}),
         }
       : "skip",
     { initialNumItems: 30 },
+  );
+  const trainingDay = useQuery(
+    api.training.listDay,
+    dayWindow
+      ? {
+          dogId: dog._id,
+          startAt: dayWindow.startAt,
+          endAt: dayWindow.endAt,
+        }
+      : "skip",
   );
   const activityTypes = useQuery(api.activityTypes.list, {
     dogId: dog._id,
@@ -200,12 +296,33 @@ function TimelinePage({ dog }: { dog: TimelineDog }) {
     [activityTypes],
   );
   const selectedKinds = useMemo(() => new Set(kinds), [kinds]);
-  const toggleKind = (kind: EventKind) =>
+  const toggleKind = (kind: TimelineKind) =>
     setKinds((selected) =>
       selected.includes(kind)
         ? selected.filter((value) => value !== kind)
         : [...selected, kind],
     );
+  const timelineItems = useMemo(
+    () =>
+      [
+        ...timeline.results.flatMap((event) =>
+          selectedKinds.size === 0 || selectedKinds.has(event.kind)
+            ? [{ at: event.at, event, type: "event" as const }]
+            : [],
+        ),
+        ...(selectedKinds.size === 0 || selectedKinds.has("training")
+          ? groupTrainingSessions(trainingDay ?? []).map((training) => ({
+              at: training.at,
+              training,
+              type: "training" as const,
+            }))
+          : []),
+      ].sort((left, right) => right.at - left.at),
+    [selectedKinds, timeline.results, trainingDay],
+  );
+  const isLoading =
+    Boolean(dayWindow) &&
+    (timeline.status === "LoadingFirstPage" || trainingDay === undefined);
 
   return (
     <AppFrame dogName={dog.name}>
@@ -277,9 +394,7 @@ function TimelinePage({ dog }: { dog: TimelineDog }) {
       <section
         aria-labelledby="timeline-ledger-title"
         aria-busy={
-          Boolean(dayWindow) &&
-          (timeline.status === "LoadingFirstPage" ||
-            timeline.status === "LoadingMore")
+          Boolean(dayWindow) && (isLoading || timeline.status === "LoadingMore")
         }
         className="mt-6 overflow-hidden rounded-xl border border-border bg-card px-5 py-6 sm:px-7"
       >
@@ -305,7 +420,7 @@ function TimelinePage({ dog }: { dog: TimelineDog }) {
           >
             {t("invalid", { name: dog.name })}
           </p>
-        ) : timeline.status === "LoadingFirstPage" ? (
+        ) : isLoading ? (
           <div className="mt-5">
             <p role="status" className="text-sm text-muted-foreground">
               {t("loading")}
@@ -324,30 +439,38 @@ function TimelinePage({ dog }: { dog: TimelineDog }) {
           </div>
         ) : (
           <>
-            {timeline.results.length > 0 && (
+            {timelineItems.length > 0 && (
               <ol className="divide-y-0">
-                {timeline.results.map((event) => (
-                  <TimelineRow
-                    key={event._id}
-                    activityTypesById={activityTypesById}
-                    dog={dog}
-                    event={event}
-                    isEditing={editId === event._id}
-                    onCancelEdit={() => setEditId(null)}
-                    onEdit={() => {
-                      setEditId(event._id);
-                      setStatus("");
-                    }}
-                    onSaved={(label) => {
-                      setEditId(null);
-                      setStatus(t("updated", { event: label }));
-                    }}
-                  />
-                ))}
+                {timelineItems.map((item) =>
+                  item.type === "training" ? (
+                    <TrainingTimelineRow
+                      key={`training-${item.training.id}`}
+                      dog={dog}
+                      training={item.training}
+                    />
+                  ) : (
+                    <TimelineRow
+                      key={item.event._id}
+                      activityTypesById={activityTypesById}
+                      dog={dog}
+                      event={item.event}
+                      isEditing={editId === item.event._id}
+                      onCancelEdit={() => setEditId(null)}
+                      onEdit={() => {
+                        setEditId(item.event._id);
+                        setStatus("");
+                      }}
+                      onSaved={(label) => {
+                        setEditId(null);
+                        setStatus(t("updated", { event: label }));
+                      }}
+                    />
+                  ),
+                )}
               </ol>
             )}
             {timeline.status === "Exhausted" ? (
-              timeline.results.length === 0 ? (
+              timelineItems.length === 0 ? (
                 <div className="py-8 text-center">
                   <p className="text-sm text-muted-foreground">
                     {kinds.length > 0 ? t("filteredEmpty") : t("empty")}

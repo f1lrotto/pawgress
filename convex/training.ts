@@ -11,6 +11,7 @@ const maxHowToTrainLength = 2_000;
 const maxNameLength = 64;
 const maxNotesLength = 500;
 const maxSessions = 100;
+const maxWindowMs = 27 * 60 * 60 * 1_000;
 
 const status = v.union(
   v.literal("learning"),
@@ -37,6 +38,11 @@ const session = v.object({
   at: v.number(),
   rating: v.number(),
   notes: v.optional(v.string()),
+});
+
+const daySession = v.object({
+  ...session.fields,
+  commandName: v.string(),
 });
 
 const normalizeName = (name: string) => {
@@ -154,6 +160,41 @@ export const get = dogQuery({
       .order("desc")
       .take(validateLimit(sessionLimit, maxSessions));
     return { command: publicCommand(value), sessions };
+  },
+});
+
+export const listDay = dogQuery({
+  args: {
+    startAt: v.number(),
+    endAt: v.number(),
+  },
+  returns: v.array(daySession),
+  handler: async (ctx, { dogId, startAt, endAt }) => {
+    if (
+      !Number.isFinite(startAt) ||
+      !Number.isFinite(endAt) ||
+      startAt < 0 ||
+      startAt >= endAt ||
+      endAt - startAt > maxWindowMs
+    ) {
+      throw new ConvexError("INVALID_TRAINING_WINDOW");
+    }
+    const sessions = await ctx.db
+      .query("trainingSessions")
+      .withIndex("by_dog_at", (q) =>
+        q.eq("dogId", dogId).gte("at", startAt).lt("at", endAt),
+      )
+      .order("desc")
+      .collect();
+    return Promise.all(
+      sessions.map(async (item) => {
+        const command = await ctx.db.get("trainingCommands", item.commandId);
+        if (command === null || command.dogId !== dogId) {
+          throw new ConvexError("COMMAND_NOT_FOUND");
+        }
+        return { ...item, commandName: command.name };
+      }),
+    );
   },
 });
 

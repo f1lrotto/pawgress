@@ -12,7 +12,7 @@ const timeline = {
   filter: "Filter events",
   filteredEmpty: "No entries match these filters.",
   intro:
-    "Read {{name}}’s meals, rest, walks, play, and garden notes on one quiet page.",
+    "Read {{name}}’s meals, rest, walks, training, play, and garden notes on one quiet page.",
   invalid:
     "We couldn't read this timeline day. Check the date and {{name}}’s timezone.",
   kinds: {
@@ -22,6 +22,7 @@ const timeline = {
     play: "Play",
     poop: "Poop",
     sleep: "Fell asleep",
+    training: "Training",
     treat: "Treat",
     wake: "Woke up",
     walk: "Walk",
@@ -30,6 +31,8 @@ const timeline = {
   loadMore: "Load older entries",
   loading: "Opening this day’s field notes…",
   loadingMore: "Loading older entries",
+  openTraining: "View training",
+  trainingRating: "Rating {{rating}}/5",
   duringWalk: "During walk",
   title: "Day by day.",
   timeline: "Timeline",

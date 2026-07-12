@@ -15,7 +15,7 @@ const timeline = {
   filter: "Filtrovať udalosti",
   filteredEmpty: "Žiadne záznamy nezodpovedajú týmto filtrom.",
   intro:
-    "Jedlá, odpočinok, prechádzky, hry a poznámky pre {{name}} nájdete prehľadne na jednej stránke.",
+    "Jedlá, odpočinok, prechádzky, tréningy, hry a poznámky pre {{name}} nájdete prehľadne na jednej stránke.",
   invalid:
     "Tento deň časovej osi sa nepodarilo načítať. Skontrolujte dátum a časové pásmo pre {{name}}.",
   kinds: {
@@ -25,6 +25,7 @@ const timeline = {
     play: "Hra",
     poop: "Kakanie",
     sleep: "Zaspatie",
+    training: "Tréning",
     treat: "Pamlsok",
     wake: "Prebudenie",
     walk: "Prechádzka",
@@ -33,6 +34,8 @@ const timeline = {
   loadMore: "Načítať staršie záznamy",
   loading: "Otvárajú sa záznamy z tohto dňa…",
   loadingMore: "Načítavajú sa staršie záznamy",
+  openTraining: "Zobraziť tréning",
+  trainingRating: "Hodnotenie {{rating}}/5",
   duringWalk: "Počas prechádzky",
   title: "Deň za dňom.",
   timeline: "Časová os",

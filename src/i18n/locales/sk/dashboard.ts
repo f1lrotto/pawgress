@@ -54,6 +54,11 @@ const dashboard = {
     currentWalk: "Aktuálna prechádzka",
     sinceWalk: "Od poslednej prechádzky",
     noWalk: "Zatiaľ bez prechádzky",
+    trainingToday: "Dnes trénované povely",
+    trainingLoading: "Načítavame dnešné tréningy…",
+    noTraining: "Dnes zatiaľ nebol trénovaný žiadny povel.",
+    trainingCount: "{{name}}: dnes {{count}}×",
+    viewTraining: "Zobraziť tréning",
   },
   agenda: {
     kicker: "Denná karta",

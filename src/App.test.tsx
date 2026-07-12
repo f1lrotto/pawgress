@@ -64,7 +64,8 @@ vi.mock("convex/react", () => ({
       name === "insights:walkIntervals" ||
       name === "routines:list" ||
       name === "sharing:listMembers" ||
-      name === "training:list"
+      name === "training:list" ||
+      name === "training:listDay"
     )
       return [];
     if (name === "sharing:activeInvite") return null;
