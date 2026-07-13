@@ -9,8 +9,14 @@ import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import AppFrame from "@/components/AppFrame";
 import { Button } from "@/components/ui/button";
-import { formatDate, formatNumber } from "@/i18n/format";
+import { formatDate } from "@/i18n/format";
 import type { Locale } from "@/i18n/locale";
+import {
+  type TrainingRating,
+  toCanonicalTrainingRating,
+  toTrainingRating,
+  trainingRatings,
+} from "@/lib/trainingRating";
 import {
   formatZonedDateTimeLocal,
   parseZonedDateTimeLocal,
@@ -34,7 +40,7 @@ type TrainingDetail = FunctionReturnType<typeof api.training.get>;
 type SessionInput = {
   at: number;
   notes?: string;
-  rating: number;
+  rating: TrainingRating;
 };
 
 const statusOptions = ["learning", "solid", "mastered"] as const;
@@ -117,7 +123,7 @@ function TrainingSessionPanel({
     locale,
     "UTC",
   );
-  const [rating, setRating] = useState("");
+  const [rating, setRating] = useState<TrainingRating | "">("");
   const [notes, setNotes] = useState("");
   const [useCurrentTime, setUseCurrentTime] = useState(true);
   const [at, setAt] = useState("");
@@ -134,17 +140,11 @@ function TrainingSessionPanel({
 
   const submit = async (event: FormEvent<HTMLFormElement>, now: number) => {
     event.preventDefault();
-    const numericRating = Number(rating);
     const parsedAt = useCurrentTime
       ? now
       : parseZonedDateTimeLocal(at, dog.timezone);
     const nextErrors: SessionErrors = {
-      rating:
-        !Number.isInteger(numericRating) ||
-        numericRating < 1 ||
-        numericRating > 5
-          ? t("errors.rating")
-          : undefined,
+      rating: rating ? undefined : t("errors.rating"),
       notes: notes.trim().length > 500 ? t("errors.notesBound") : undefined,
       at:
         parsedAt === null
@@ -158,14 +158,20 @@ function TrainingSessionPanel({
     setErrors(nextErrors);
     const invalid = firstError(nextErrors);
     if (invalid) {
-      document.getElementById(`session-${invalid}`)?.focus();
+      document
+        .getElementById(
+          invalid === "rating"
+            ? "session-rating-negative"
+            : `session-${invalid}`,
+        )
+        ?.focus();
       return;
     }
-    if (parsedAt === null) return;
+    if (parsedAt === null || !rating) return;
     if (
       await onSubmit({
         at: parsedAt,
-        rating: numericRating,
+        rating,
         ...(notes.trim() ? { notes: notes.trim() } : {}),
       })
     ) {
@@ -193,38 +199,41 @@ function TrainingSessionPanel({
           <legend className="text-xl font-bold leading-[1.625rem]">
             {t("session.practiceLog")}
           </legend>
-          <div className="mt-5">
-            <label htmlFor="session-rating" className="text-sm font-bold">
-              {t("session.rating")}
-            </label>
-            <input
-              id="session-rating"
-              type="number"
-              min="1"
-              max="5"
-              step="1"
-              inputMode="numeric"
-              value={rating}
-              aria-invalid={Boolean(errors.rating)}
-              aria-describedby={
-                errors.rating ? "session-rating-error" : "session-rating-help"
-              }
-              className="field-control mt-2 w-full"
-              onChange={(event) => {
-                setRating(event.target.value);
-                setErrors((current) => ({ ...current, rating: undefined }));
-              }}
-            />
+          <fieldset className="mt-5 border-0 p-0">
+            <legend className="text-sm font-bold">{t("session.rating")}</legend>
+            <div className="mt-2 grid grid-cols-3 gap-2">
+              {trainingRatings.map(({ icon, value }) => (
+                <label
+                  key={value}
+                  className="flex min-h-11 cursor-pointer flex-col items-center justify-center rounded-md border border-border bg-card px-1 py-1 text-xs font-semibold has-[:checked]:border-primary has-[:checked]:bg-background has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-ring"
+                >
+                  <input
+                    className="sr-only"
+                    type="radio"
+                    id={`session-rating-${value}`}
+                    name="session-rating"
+                    value={value}
+                    aria-describedby={
+                      errors.rating ? "session-rating-error" : undefined
+                    }
+                    checked={rating === value}
+                    onChange={() => {
+                      setRating(value);
+                      setErrors((current) => ({
+                        ...current,
+                        rating: undefined,
+                      }));
+                    }}
+                  />
+                  <span aria-hidden="true" className="text-lg">
+                    {icon}
+                  </span>
+                  {t(`ratings.${value}`)}
+                </label>
+              ))}
+            </div>
             <FieldError id="session-rating-error">{errors.rating}</FieldError>
-            {!errors.rating && (
-              <p
-                id="session-rating-help"
-                className="mt-2 text-xs text-muted-foreground"
-              >
-                {t("session.ratingHelp")}
-              </p>
-            )}
-          </div>
+          </fieldset>
           <div className="mt-5">
             <label htmlFor="session-notes" className="text-sm font-bold">
               {t("session.notes")}
@@ -336,32 +345,37 @@ function TrainingSessionPanel({
           >
             {[...sessions]
               .sort((left, right) => right.at - left.at)
-              .map((item) => (
-                <li key={item._id} className="min-w-0 py-4">
-                  <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-                    <time
-                      dateTime={new Date(item.at).toISOString()}
-                      className="min-w-0 text-sm font-medium text-muted-foreground [overflow-wrap:anywhere]"
-                    >
-                      {formatter.format(item.at)}
-                    </time>
-                    <span
-                      aria-label={t("aria.rating", {
-                        rating: formatNumber(item.rating, locale),
-                      })}
-                      className="shrink-0 font-semibold tabular-nums"
-                    >
-                      {formatNumber(item.rating, locale)}/
-                      {formatNumber(5, locale)}
-                    </span>
-                  </div>
-                  {item.notes && (
-                    <p className="mt-3 whitespace-pre-wrap break-words leading-6 [overflow-wrap:anywhere]">
-                      {item.notes}
-                    </p>
-                  )}
-                </li>
-              ))}
+              .map((item) => {
+                const rating = trainingRatings.find(
+                  ({ value }) => value === toTrainingRating(item.rating),
+                )!;
+                return (
+                  <li key={item._id} className="min-w-0 py-4">
+                    <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                      <time
+                        dateTime={new Date(item.at).toISOString()}
+                        className="min-w-0 text-sm font-medium text-muted-foreground [overflow-wrap:anywhere]"
+                      >
+                        {formatter.format(item.at)}
+                      </time>
+                      <span
+                        aria-label={t("aria.rating", {
+                          rating: t(`ratings.${rating.value}`),
+                        })}
+                        className="inline-flex shrink-0 items-center gap-1.5 font-semibold"
+                      >
+                        <span aria-hidden="true">{rating.icon}</span>
+                        {t(`ratings.${rating.value}`)}
+                      </span>
+                    </div>
+                    {item.notes && (
+                      <p className="mt-3 whitespace-pre-wrap break-words leading-6 [overflow-wrap:anywhere]">
+                        {item.notes}
+                      </p>
+                    )}
+                  </li>
+                );
+              })}
           </ol>
         )}
       </section>
@@ -601,7 +615,7 @@ function TrainingPage({ dog }: { dog: TrainingDog }) {
         dogId: dog._id,
         commandId: selectedCommand._id,
         at,
-        rating,
+        rating: toCanonicalTrainingRating(rating),
         ...(notes ? { notes } : {}),
       });
       setFeedback(t("success.session"));

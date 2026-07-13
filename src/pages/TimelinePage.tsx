@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { formatDate, formatNumber } from "@/i18n/format";
 import type { Locale } from "@/i18n/locale";
 import { formatElapsed, getElapsedMs } from "@/lib/timers";
+import { toTrainingRating, trainingRatings } from "@/lib/trainingRating";
 import { EventEditor } from "@/pages/DashboardPage";
 import {
   formatZonedDateTimeLocal,
@@ -27,11 +28,14 @@ type TrainingDay = FunctionReturnType<typeof api.training.listDay>;
 type TimelineKind = EventKind | "training";
 type TrainingGroup = {
   at: number;
-  commandIds: Array<Id<"trainingCommands">>;
-  commandNames: string[];
+  commands: Array<{
+    commandId: Id<"trainingCommands">;
+    commandName: string;
+    rating: number;
+    sessionId: Id<"trainingSessions">;
+  }>;
   id: Id<"trainingSessions">;
   notes?: string;
-  rating: number;
 };
 type ActivityTypes = FunctionReturnType<typeof api.activityTypes.list>;
 type ActivityTypesById = ReadonlyMap<
@@ -72,19 +76,28 @@ const eventLabel = (
 const groupTrainingSessions = (sessions: TrainingDay) =>
   Array.from(
     sessions.reduce((groups, session) => {
-      const key = `${session.at}:${session.rating}:${session.notes ?? ""}`;
+      const key = `${session.at}:${session.notes ?? ""}`;
       const group = groups.get(key);
       if (group) {
-        group.commandIds.push(session.commandId);
-        group.commandNames.push(session.commandName);
+        group.commands.push({
+          commandId: session.commandId,
+          commandName: session.commandName,
+          rating: session.rating,
+          sessionId: session._id,
+        });
       } else {
         groups.set(key, {
           at: session.at,
-          commandIds: [session.commandId],
-          commandNames: [session.commandName],
+          commands: [
+            {
+              commandId: session.commandId,
+              commandName: session.commandName,
+              rating: session.rating,
+              sessionId: session._id,
+            },
+          ],
           id: session._id,
           notes: session.notes,
-          rating: session.rating,
         });
       }
       return groups;
@@ -192,12 +205,11 @@ function TrainingTimelineRow({
   dog: TimelineDog;
   training: TrainingGroup;
 }) {
-  const { i18n, t } = useTranslation("timeline");
-  const locale = i18n.resolvedLanguage as Locale;
+  const { t } = useTranslation("timeline");
   const time = eventTime(training.at, dog.timezone);
   const href =
-    training.commandIds.length === 1
-      ? `/training?command=${training.commandIds[0]}#command-detail`
+    training.commands.length === 1
+      ? `/training?command=${training.commands[0].commandId}#command-detail`
       : "/training";
 
   return (
@@ -213,22 +225,41 @@ function TrainingTimelineRow({
           <h3 className="text-base font-semibold leading-6">
             {t("kinds.training")}
           </h3>
-          <span className="rounded-full bg-secondary px-2.5 py-1 text-xs font-semibold text-muted-foreground">
-            {t("trainingRating", {
-              rating: formatNumber(training.rating, locale),
-            })}
-          </span>
         </div>
-        <p className="mt-1 break-words text-sm font-medium leading-5 [overflow-wrap:anywhere]">
-          {training.commandNames.join(", ")}
-        </p>
+        <div className="mt-2 grid gap-2">
+          {training.commands.map((command) => {
+            const rating = trainingRatings.find(
+              ({ value }) => value === toTrainingRating(command.rating),
+            )!;
+            return (
+              <div
+                key={command.sessionId}
+                className="flex min-w-0 flex-wrap items-center justify-between gap-2"
+              >
+                <span className="break-words text-sm font-medium leading-5 [overflow-wrap:anywhere]">
+                  {command.commandName}
+                </span>
+                <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-secondary px-2.5 py-1 text-xs font-semibold text-muted-foreground">
+                  <span aria-hidden="true">{rating.icon}</span>
+                  {t(`trainingRating.${rating.value}`)}
+                </span>
+              </div>
+            );
+          })}
+        </div>
         {training.notes && (
           <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-6 text-muted-foreground [overflow-wrap:anywhere]">
             {training.notes}
           </p>
         )}
         <Button asChild variant="secondary" className="mt-3">
-          <Link to={href}>{t("openTraining")}</Link>
+          <Link to={href}>
+            {t(
+              training.commands.length === 1
+                ? "openTrainingOne"
+                : "openTrainingMany",
+            )}
+          </Link>
         </Button>
       </div>
     </li>

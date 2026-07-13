@@ -473,7 +473,8 @@ describe("TimelinePage", () => {
         commandId: "sit-id",
         commandName: "Sit",
         dogId,
-        rating: 5,
+        notes: "Mixed practice.",
+        rating: 2,
       },
       {
         _creationTime: 1,
@@ -482,7 +483,8 @@ describe("TimelinePage", () => {
         commandId: "stay-id",
         commandName: "Stay",
         dogId,
-        rating: 5,
+        notes: "Mixed practice.",
+        rating: 4,
       },
       {
         _creationTime: 1,
@@ -503,8 +505,12 @@ describe("TimelinePage", () => {
     expect(
       within(rows[0]).getByRole("heading", { name: "Training" }),
     ).toBeVisible();
-    expect(within(rows[0]).getByText("Sit, Stay")).toBeVisible();
-    expect(within(rows[0]).getByText("Rating 5/5")).toBeVisible();
+    expect(within(rows[0]).getByText("Sit")).toBeVisible();
+    expect(within(rows[0]).getByText("Stay")).toBeVisible();
+    expect(within(rows[0]).getByText("Negative")).toBeVisible();
+    expect(within(rows[0]).getByText("Positive")).toBeVisible();
+    expect(within(rows[0]).getByText("Mixed practice.")).toBeVisible();
+    expect(rows[0]).not.toHaveTextContent("/5");
     expect(
       within(rows[0]).getByRole("link", { name: "View training" }),
     ).toHaveAttribute("href", "/training");
@@ -513,7 +519,7 @@ describe("TimelinePage", () => {
     ).toBeVisible();
     expect(within(rows[2]).getByText("Great focus outside.")).toBeVisible();
     expect(
-      within(rows[2]).getByRole("link", { name: "View training" }),
+      within(rows[2]).getByRole("link", { name: "View command" }),
     ).toHaveAttribute("href", "/training?command=recall-id#command-detail");
 
     fireEvent.click(screen.getByRole("checkbox", { name: "Training" }));

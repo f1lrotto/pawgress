@@ -201,6 +201,28 @@ test("a household can log and manage live activity", async ({
   const cafeHistory = activityRow(secondPage, "Cafe visit");
   await expect(cafeHistory).toBeVisible({ timeout: 1_000 });
 
+  await page
+    .getByRole("navigation", { name: "Notebook sections" })
+    .getByRole("link", { name: "Today" })
+    .click();
+  await page.getByRole("button", { name: "Log enrichment" }).click();
+  const quickEnrichment = page.getByRole("dialog", {
+    name: "Log enrichment",
+  });
+  await quickEnrichment.getByRole("checkbox", { name: "Cafe visit" }).check();
+  await quickEnrichment.getByRole("checkbox", { name: "Snuffle mat" }).check();
+  await quickEnrichment
+    .getByRole("button", { name: "Save enrichment" })
+    .click();
+  await expect(quickEnrichment).not.toBeVisible();
+  await expect(activityRow(secondPage, "Snuffle mat")).toBeVisible({
+    timeout: 1_000,
+  });
+  await page
+    .getByRole("navigation", { name: "Notebook sections" })
+    .getByRole("link", { name: "Enrichment" })
+    .click();
+
   await cafeRow.getByRole("button", { name: "Archive Cafe visit" }).click();
   await cafeRow
     .getByRole("button", { name: "Confirm archive Cafe visit" })
@@ -253,7 +275,14 @@ test("a household can log and manage live activity", async ({
   const quickTraining = page.getByRole("dialog", { name: "Log training" });
   await quickTraining.getByRole("checkbox", { name: "Recall" }).check();
   await quickTraining.getByRole("checkbox", { name: "Stay" }).check();
-  await quickTraining.getByRole("radio", { name: "Thumbs up" }).press("Space");
+  await quickTraining
+    .getByRole("group", { name: "How did Recall go?" })
+    .getByRole("radio", { name: "Positive" })
+    .check();
+  await quickTraining
+    .getByRole("group", { name: "How did Stay go?" })
+    .getByRole("radio", { name: "Neutral" })
+    .check();
   await quickTraining.getByRole("button", { name: "Save training" }).click();
   await expect(quickTraining).not.toBeVisible();
   const rightNow = page.getByRole("region", { name: "Right now" });
@@ -268,7 +297,7 @@ test("a household can log and manage live activity", async ({
   await page.getByRole("link", { name: "Open Recall" }).click();
   await expect(
     page.getByRole("list", { name: "Training sessions" }),
-  ).toContainText("5/5");
+  ).toContainText("Positive");
 
   await secondPage
     .getByRole("navigation", { name: "Notebook sections" })
@@ -304,7 +333,7 @@ test("a household can log and manage live activity", async ({
   const sessionForm = commandDetail.getByRole("form", {
     name: "Log training session",
   });
-  await sessionForm.getByLabel("Session rating").fill("5");
+  await sessionForm.getByRole("radio", { name: "Negative" }).check();
   await sessionForm
     .getByLabel("Session notes")
     .fill("Immediate response beside the cafe.");
@@ -313,7 +342,7 @@ test("a household can log and manage live activity", async ({
     secondCommandDetail.getByRole("list", { name: "Training sessions" }),
   ).toContainText("Immediate response beside the cafe.", { timeout: 1_000 });
   await expect(
-    secondCommandDetail.getByLabel("Rating 5 out of 5").last(),
+    secondCommandDetail.getByLabel("Negative rating").last(),
   ).toBeVisible({ timeout: 1_000 });
 
   for (const householdPage of [page, secondPage]) {
@@ -443,7 +472,9 @@ test("a household can log and manage live activity", async ({
     .filter({ hasText: "Stay" });
   await expect(timelineTraining).toContainText("Recall");
   await expect(timelineTraining).toContainText("Stay");
-  await expect(timelineTraining).toContainText("Rating 5/5");
+  await expect(timelineTraining).toContainText("Positive");
+  await expect(timelineTraining).toContainText("Neutral");
+  await expect(timelineTraining).not.toContainText("/5");
 
   const peeFilter = page.getByRole("checkbox", { name: "Pee" });
   await peeFilter.press("Space");

@@ -542,4 +542,134 @@ describe("training", () => {
       ),
     ).toHaveLength(2);
   });
+
+  it("logs a semantic rating for each command using canonical values", async () => {
+    const { owner, dogId, t } = await setup();
+    const [sitId, stayId, recallId] = await Promise.all([
+      owner.mutation(api.training.create, { dogId, name: "Sit" }),
+      owner.mutation(api.training.create, { dogId, name: "Stay" }),
+      owner.mutation(api.training.create, { dogId, name: "Recall" }),
+    ]);
+
+    const ids = await owner.mutation(api.training.logRatedSessions, {
+      dogId,
+      at: firstSessionAt,
+      sessions: [
+        { commandId: sitId, rating: "negative" },
+        { commandId: stayId, rating: "neutral" },
+        { commandId: recallId, rating: "positive" },
+      ],
+    });
+
+    expect(ids).toHaveLength(3);
+    expect(
+      await t.run(({ db }) =>
+        db
+          .query("trainingSessions")
+          .withIndex("by_dog_at", (q) => q.eq("dogId", dogId))
+          .collect(),
+      ),
+    ).toEqual([
+      expect.objectContaining({ commandId: sitId, rating: 1 }),
+      expect.objectContaining({ commandId: stayId, rating: 3 }),
+      expect.objectContaining({ commandId: recallId, rating: 5 }),
+    ]);
+  });
+
+  it("validates rated sessions before inserting any of them", async () => {
+    const { owner, dogId, otherDogId, t } = await setup();
+    const [activeId, archivedId, otherId] = await Promise.all([
+      owner.mutation(api.training.create, { dogId, name: "Sit" }),
+      owner.mutation(api.training.create, { dogId, name: "Archived" }),
+      owner.mutation(api.training.create, { dogId: otherDogId, name: "Other" }),
+    ]);
+    await owner.mutation(api.training.setArchived, {
+      dogId,
+      commandId: archivedId,
+      isArchived: true,
+    });
+    const tooManyIds = await t.run(({ db }) =>
+      Promise.all(
+        Array.from({ length: 101 }, (_, index) =>
+          db.insert("trainingCommands", {
+            dogId,
+            name: `Extra ${index}`,
+            normalizedName: `extra ${index}`,
+            status: "learning",
+            isArchived: false,
+          }),
+        ),
+      ),
+    );
+
+    await expect(
+      owner.mutation(api.training.logRatedSessions, {
+        dogId,
+        at: firstSessionAt,
+        sessions: [],
+      }),
+    ).rejects.toThrow("INVALID_SESSIONS");
+    await expect(
+      owner.mutation(api.training.logRatedSessions, {
+        dogId,
+        at: firstSessionAt,
+        sessions: [
+          { commandId: activeId, rating: "positive" },
+          { commandId: activeId, rating: "negative" },
+        ],
+      }),
+    ).rejects.toThrow("INVALID_SESSIONS");
+    await expect(
+      owner.mutation(api.training.logRatedSessions, {
+        dogId,
+        at: firstSessionAt,
+        sessions: tooManyIds.map((commandId) => ({
+          commandId,
+          rating: "neutral" as const,
+        })),
+      }),
+    ).rejects.toThrow("INVALID_SESSIONS");
+    await expect(
+      owner.mutation(api.training.logRatedSessions, {
+        dogId,
+        at: firstSessionAt,
+        sessions: [{ commandId: activeId, rating: "mixed" as "negative" }],
+      }),
+    ).rejects.toThrow();
+    await expect(
+      owner.mutation(api.training.logRatedSessions, {
+        dogId,
+        at: -1,
+        sessions: [{ commandId: activeId, rating: "neutral" }],
+      }),
+    ).rejects.toThrow("INVALID_TIMESTAMP");
+    await expect(
+      owner.mutation(api.training.logRatedSessions, {
+        dogId,
+        at: firstSessionAt,
+        sessions: [
+          { commandId: activeId, rating: "positive" },
+          { commandId: archivedId, rating: "neutral" },
+        ],
+      }),
+    ).rejects.toThrow("COMMAND_ARCHIVED");
+    await expect(
+      owner.mutation(api.training.logRatedSessions, {
+        dogId,
+        at: firstSessionAt,
+        sessions: [
+          { commandId: activeId, rating: "positive" },
+          { commandId: otherId, rating: "neutral" },
+        ],
+      }),
+    ).rejects.toThrow("COMMAND_NOT_FOUND");
+    await expect(
+      t.run(({ db }) =>
+        db
+          .query("trainingSessions")
+          .withIndex("by_dog_at", (q) => q.eq("dogId", dogId))
+          .collect(),
+      ),
+    ).resolves.toEqual([]);
+  });
 });

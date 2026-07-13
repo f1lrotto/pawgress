@@ -146,3 +146,41 @@ export const logPlay = dogMutation({
     });
   },
 });
+
+export const logPlays = dogMutation({
+  args: {
+    activityTypeIds: v.array(v.id("activityTypes")),
+    at: v.number(),
+  },
+  returns: v.array(v.id("events")),
+  handler: async (ctx, { dogId, activityTypeIds, at }) => {
+    if (
+      activityTypeIds.length === 0 ||
+      activityTypeIds.length > maxActivityTypes ||
+      new Set(activityTypeIds).size !== activityTypeIds.length
+    ) {
+      throw new ConvexError("INVALID_ACTIVITY_TYPES");
+    }
+    const dog = await requireDog(ctx, dogId);
+    const timestamp = validateDogTimestamp(at, dog);
+    const types = await Promise.all(
+      activityTypeIds.map((activityTypeId) =>
+        requireActivityType(ctx, dogId, activityTypeId),
+      ),
+    );
+    if (types.some(({ isArchived }) => isArchived)) {
+      throw new ConvexError("ACTIVITY_TYPE_ARCHIVED");
+    }
+    return Promise.all(
+      activityTypeIds.map((activityTypeId) =>
+        ctx.db.insert("events", {
+          dogId,
+          userId: ctx.userId,
+          kind: "play",
+          activityTypeId,
+          at: timestamp,
+        }),
+      ),
+    );
+  },
+});

@@ -19,6 +19,14 @@ const status = v.union(
   v.literal("mastered"),
 );
 
+const trainingRating = v.union(
+  v.literal("negative"),
+  v.literal("neutral"),
+  v.literal("positive"),
+);
+
+const ratingValues = { negative: 1, neutral: 3, positive: 5 } as const;
+
 const command = v.object({
   _id: v.id("trainingCommands"),
   _creationTime: v.number(),
@@ -373,6 +381,48 @@ export const logSessions = dogMutation({
           commandId,
           at: validatedAt,
           rating,
+        }),
+      ),
+    );
+  },
+});
+
+export const logRatedSessions = dogMutation({
+  args: {
+    at: v.number(),
+    sessions: v.array(
+      v.object({
+        commandId: v.id("trainingCommands"),
+        rating: trainingRating,
+      }),
+    ),
+  },
+  returns: v.array(v.id("trainingSessions")),
+  handler: async (ctx, { dogId, at, sessions }) => {
+    const commandIds = sessions.map(({ commandId }) => commandId);
+    if (
+      sessions.length === 0 ||
+      sessions.length > maxSessions ||
+      new Set(commandIds).size !== sessions.length
+    ) {
+      throw new ConvexError("INVALID_SESSIONS");
+    }
+    const dog = await ctx.db.get("dogs", dogId);
+    if (dog === null) throw new ConvexError("DOG_NOT_FOUND");
+    const validatedAt = validateDogTimestamp(at, dog);
+    const commands = await Promise.all(
+      commandIds.map((commandId) => requireCommand(ctx, dogId, commandId)),
+    );
+    if (commands.some(({ isArchived }) => isArchived)) {
+      throw new ConvexError("COMMAND_ARCHIVED");
+    }
+    return Promise.all(
+      sessions.map(({ commandId, rating }) =>
+        ctx.db.insert("trainingSessions", {
+          dogId,
+          commandId,
+          at: validatedAt,
+          rating: ratingValues[rating],
         }),
       ),
     );

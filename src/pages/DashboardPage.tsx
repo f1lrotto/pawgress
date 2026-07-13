@@ -20,6 +20,7 @@ import { formatNumber } from "@/i18n/format";
 import { resolveBrowserLocale } from "@/i18n/locale";
 import { getNextMealCountdown } from "@/lib/mealCountdown";
 import { deriveSleepState, formatElapsed, getElapsedMs } from "@/lib/timers";
+import { type TrainingRating, trainingRatings } from "@/lib/trainingRating";
 import {
   formatZonedDateTimeLocal,
   getZonedDayKeys,
@@ -1499,6 +1500,7 @@ function QuickLogSection({
   pendingOperation,
   sleepState,
   timeFormatter,
+  activityTypes,
   trainingCommands,
 }: {
   activeWalk: ActiveWalk | undefined;
@@ -1527,6 +1529,7 @@ function QuickLogSection({
   pendingOperation: PendingOperation;
   sleepState: SleepState | undefined;
   timeFormatter: Intl.DateTimeFormat;
+  activityTypes: ActivityTypes | undefined;
   trainingCommands: TrainingCommands | undefined;
 }) {
   const { t } = useTranslation("dashboard");
@@ -1605,7 +1608,7 @@ function QuickLogSection({
       <div
         role="group"
         aria-labelledby="quick-log-title"
-        className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-4 lg:grid-cols-7"
+        className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-4 lg:grid-cols-8"
       >
         {quickActions.map(({ icon, kind }) => {
           const label = t(`events.${kind}`);
@@ -1722,6 +1725,12 @@ function QuickLogSection({
             </button>
           );
         })}
+        <EnrichmentQuickLog
+          activityTypes={activityTypes}
+          disabled={isBusy}
+          dog={dog}
+          isEarlier={isEarlier}
+        />
         <TrainingQuickLog
           commands={trainingCommands}
           disabled={isBusy}
@@ -1815,6 +1824,206 @@ function QuickLogSection({
   );
 }
 
+function EnrichmentQuickLog({
+  activityTypes,
+  disabled,
+  dog,
+  isEarlier,
+}: {
+  activityTypes: ActivityTypes | undefined;
+  disabled: boolean;
+  dog: DashboardDog;
+  isEarlier: boolean;
+}) {
+  const { t } = useTranslation("dashboard");
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const openerRef = useRef<HTMLButtonElement>(null);
+  const pendingRef = useRef(false);
+  const logPlays = useMutation(api.activityTypes.logPlays);
+  const active = useMemo(
+    () => activityTypes?.filter(({ isArchived }) => !isArchived) ?? [],
+    [activityTypes],
+  );
+  const activeIds = useMemo(
+    () => new Set(active.map(({ _id }) => _id)),
+    [active],
+  );
+  const [selected, setSelected] = useState<Array<Id<"activityTypes">>>([]);
+  const at = useRef<number | null>(null);
+  const [error, setError] = useState("");
+  const [isOpen, setIsOpen] = useState(false);
+  const [isPending, setIsPending] = useState(false);
+  const activeSelected = selected.filter((id) => activeIds.has(id));
+
+  const close = () => dialogRef.current?.close();
+  const reset = () => {
+    pendingRef.current = false;
+    setSelected([]);
+    at.current = null;
+    setError("");
+    setIsOpen(false);
+    setIsPending(false);
+    openerRef.current?.focus();
+  };
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (pendingRef.current) return;
+    if (isEarlier && at.current === null)
+      return setError(t("quick.chooseEarlier"));
+    if (activeSelected.length === 0)
+      return setError(t("enrichment.selectActivity"));
+    pendingRef.current = true;
+    setIsPending(true);
+    setError("");
+    try {
+      await logPlays({
+        dogId: dog._id,
+        activityTypeIds: activeSelected,
+        at: isEarlier && at.current !== null ? at.current : getCurrentTime(),
+      });
+      close();
+    } catch {
+      pendingRef.current = false;
+      setError(t("enrichment.saveError"));
+      setIsPending(false);
+    }
+  };
+
+  return (
+    <>
+      <button
+        ref={openerRef}
+        type="button"
+        disabled={disabled}
+        aria-label={t("enrichment.openAria")}
+        aria-describedby="quick-state-enrichment"
+        className="min-h-24 bg-card px-3 py-3 text-left transition-colors duration-150 hover:bg-accent active:bg-muted focus-visible:z-10 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:bg-muted disabled:opacity-60 sm:px-4"
+        onClick={() => {
+          setIsOpen(true);
+          dialogRef.current?.showModal();
+        }}
+      >
+        <span className="flex items-center gap-2.5">
+          <span aria-hidden="true" className="w-5 shrink-0 text-center">
+            ✦
+          </span>
+          <strong className="text-sm leading-5 sm:text-base">
+            {t("enrichment.label")}
+          </strong>
+        </span>
+        <span
+          id="quick-state-enrichment"
+          className="mt-2 block text-sm leading-5 text-muted-foreground"
+        >
+          {activityTypes === undefined
+            ? t("common.checking")
+            : t("enrichment.choose")}
+        </span>
+      </button>
+      <dialog
+        ref={dialogRef}
+        aria-labelledby="enrichment-dialog-title"
+        className="m-auto w-[min(32rem,calc(100%-2rem))] rounded-xl border border-border bg-card p-0 text-foreground shadow-xl backdrop:bg-foreground/40"
+        onClose={reset}
+        onCancel={(event) => isPending && event.preventDefault()}
+      >
+        <form className="p-5 sm:p-6" onSubmit={(event) => void submit(event)}>
+          <fieldset disabled={isPending} className="m-0 border-0 p-0">
+            <legend id="enrichment-dialog-title" className="text-xl font-bold">
+              {t("enrichment.title")}
+            </legend>
+            {isEarlier && isOpen && active.length > 0 && (
+              <EarlierTimePicker
+                dog={dog}
+                onChange={(selectedAt) => {
+                  at.current = selectedAt;
+                  setError("");
+                }}
+              />
+            )}
+            {activityTypes === undefined ? (
+              <div
+                aria-label={t("enrichment.loading")}
+                className="mt-5"
+                role="status"
+              >
+                <span className="sr-only">{t("enrichment.loading")}</span>
+                <span
+                  aria-hidden="true"
+                  className="block h-12 animate-pulse rounded-lg bg-muted motion-reduce:animate-none"
+                />
+              </div>
+            ) : active.length === 0 ? (
+              <div className="mt-4">
+                <p className="text-sm text-muted-foreground">
+                  {t("enrichment.empty")}
+                </p>
+                <Link
+                  className="mt-3 inline-block text-sm font-bold underline underline-offset-4"
+                  to="/enrichment"
+                  onClick={close}
+                >
+                  {t("enrichment.setup")}
+                </Link>
+              </div>
+            ) : (
+              <fieldset className="mt-5">
+                <legend className="text-sm font-bold">
+                  {t("enrichment.activities")}
+                </legend>
+                <div className="mt-2 grid max-h-64 gap-2 overflow-y-auto">
+                  {active.map((activity) => (
+                    <label
+                      key={activity._id}
+                      className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border border-border px-3 py-2 has-[:checked]:bg-secondary"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={activeSelected.includes(activity._id)}
+                        onChange={() => {
+                          setSelected((current) => {
+                            const available = current.filter((id) =>
+                              activeIds.has(id),
+                            );
+                            return available.includes(activity._id)
+                              ? available.filter((id) => id !== activity._id)
+                              : [...available, activity._id];
+                          });
+                          setError("");
+                        }}
+                      />
+                      <span aria-hidden="true">{activity.emoji ?? "🐾"}</span>
+                      <span className="font-semibold">{activity.name}</span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+            )}
+            {error && (
+              <p
+                role="alert"
+                className="mt-4 text-sm font-bold text-destructive"
+              >
+                {error}
+              </p>
+            )}
+            <div className="mt-6 grid grid-cols-2 gap-3">
+              <Button type="button" variant="secondary" onClick={close}>
+                {t("common.cancel")}
+              </Button>
+              {active.length > 0 && (
+                <Button type="submit">
+                  {isPending ? t("common.saving") : t("enrichment.save")}
+                </Button>
+              )}
+            </div>
+          </fieldset>
+        </form>
+      </dialog>
+    </>
+  );
+}
+
 function TrainingQuickLog({
   commands,
   disabled,
@@ -1829,41 +2038,84 @@ function TrainingQuickLog({
   const { t } = useTranslation("dashboard");
   const dialogRef = useRef<HTMLDialogElement>(null);
   const openerRef = useRef<HTMLButtonElement>(null);
-  const logSessions = useMutation(api.training.logSessions);
-  const [selected, setSelected] = useState<Array<Id<"trainingCommands">>>([]);
-  const [rating, setRating] = useState<number | null>(null);
+  const pendingRef = useRef(false);
+  const logSessions = useMutation(api.training.logRatedSessions);
+  const commandIds = useMemo(
+    () => new Set(commands?.map(({ _id }) => _id) ?? []),
+    [commands],
+  );
+  const [sessions, setSessions] = useState<
+    Array<{
+      commandId: Id<"trainingCommands">;
+      rating: TrainingRating | null;
+    }>
+  >([]);
   const at = useRef<number | null>(null);
   const [error, setError] = useState("");
+  const [ratingErrorCommandId, setRatingErrorCommandId] = useState<
+    Id<"trainingCommands"> | undefined
+  >();
   const [isOpen, setIsOpen] = useState(false);
   const [isPending, setIsPending] = useState(false);
+  const availableSessions = sessions.filter(({ commandId }) =>
+    commandIds.has(commandId),
+  );
+  const activeRatingErrorCommandId =
+    ratingErrorCommandId && commandIds.has(ratingErrorCommandId)
+      ? ratingErrorCommandId
+      : undefined;
 
   const close = () => dialogRef.current?.close();
   const reset = () => {
-    setSelected([]);
-    setRating(null);
+    pendingRef.current = false;
+    setSessions([]);
     at.current = null;
     setError("");
+    setRatingErrorCommandId(undefined);
     setIsOpen(false);
     setIsPending(false);
     openerRef.current?.focus();
   };
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (isEarlier && at.current === null)
+    if (pendingRef.current) return;
+    if (isEarlier && at.current === null) {
+      setRatingErrorCommandId(undefined);
       return setError(t("quick.chooseEarlier"));
-    if (selected.length === 0) return setError(t("training.selectCommand"));
-    if (rating === null) return setError(t("training.selectAssessment"));
+    }
+    if (availableSessions.length === 0) {
+      setRatingErrorCommandId(undefined);
+      return setError(t("training.selectCommand"));
+    }
+    const firstUnrated = availableSessions.find(
+      ({ rating }) => rating === null,
+    );
+    if (firstUnrated) {
+      setError(t("training.selectAssessment"));
+      setRatingErrorCommandId(firstUnrated.commandId);
+      window.setTimeout(() =>
+        document
+          .getElementById(`training-rating-${firstUnrated.commandId}-negative`)
+          ?.focus(),
+      );
+      return;
+    }
+    const ratedSessions = availableSessions.flatMap(({ commandId, rating }) =>
+      rating === null ? [] : [{ commandId, rating }],
+    );
+    pendingRef.current = true;
     setIsPending(true);
     setError("");
+    setRatingErrorCommandId(undefined);
     try {
       await logSessions({
         dogId: dog._id,
-        commandIds: selected,
         at: isEarlier && at.current !== null ? at.current : getCurrentTime(),
-        rating,
+        sessions: ratedSessions,
       });
       close();
     } catch {
+      pendingRef.current = false;
       setError(t("training.saveError"));
       setIsPending(false);
     }
@@ -1877,7 +2129,7 @@ function TrainingQuickLog({
         disabled={disabled}
         aria-label={t("training.openAria")}
         aria-describedby="quick-state-training"
-        className="col-span-2 min-h-24 bg-card px-3 py-3 text-left transition-colors duration-150 hover:bg-accent active:bg-muted focus-visible:z-10 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring sm:col-span-2 sm:px-4 lg:col-span-1"
+        className="min-h-24 bg-card px-3 py-3 text-left transition-colors duration-150 hover:bg-accent active:bg-muted focus-visible:z-10 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring sm:px-4"
         onClick={() => {
           setIsOpen(true);
           dialogRef.current?.showModal();
@@ -1919,6 +2171,7 @@ function TrainingQuickLog({
                   onChange={(selectedAt) => {
                     at.current = selectedAt;
                     setError("");
+                    setRatingErrorCommandId(undefined);
                   }}
                 />
               )}
@@ -1942,63 +2195,121 @@ function TrainingQuickLog({
                     {t("training.commands")}
                   </legend>
                   <div className="mt-2 grid max-h-52 gap-2 overflow-y-auto">
-                    {commands?.map((command) => (
-                      <label
-                        key={command._id}
-                        className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border border-border px-3 py-2 has-[:checked]:bg-secondary"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selected.includes(command._id)}
-                          onChange={() => {
-                            setSelected((current) =>
-                              current.includes(command._id)
-                                ? current.filter((id) => id !== command._id)
-                                : [...current, command._id],
-                            );
-                            setError("");
-                          }}
-                        />
-                        <span className="font-semibold">{command.name}</span>
-                      </label>
-                    ))}
-                  </div>
-                </fieldset>
-                <fieldset className="mt-5">
-                  <legend className="text-sm font-bold">
-                    {t("training.assessment")}
-                  </legend>
-                  <div className="mt-2 grid grid-cols-3 gap-2">
-                    {([1, 3, 5] as const).map((value) => (
-                      <label
-                        key={value}
-                        className="flex min-h-12 cursor-pointer items-center justify-center rounded-lg border border-border px-2 has-[:checked]:bg-secondary"
-                      >
-                        <input
-                          className="sr-only"
-                          type="radio"
-                          name="training-rating"
-                          value={value}
-                          checked={rating === value}
-                          onChange={() => {
-                            setRating(value);
-                            setError("");
-                          }}
-                        />
-                        <span aria-hidden="true" className="text-xl">
-                          {value === 1 ? "👎" : value === 3 ? "😐" : "👍"}
-                        </span>
-                        <span className="sr-only">
-                          {t(`training.rating${value}`)}
-                        </span>
-                      </label>
-                    ))}
+                    {commands?.map((command) => {
+                      const session = availableSessions.find(
+                        ({ commandId }) => commandId === command._id,
+                      );
+                      return (
+                        <div
+                          key={command._id}
+                          className="rounded-lg border border-border px-3 py-2 has-[:checked]:bg-secondary"
+                        >
+                          <label className="flex min-h-8 cursor-pointer items-center gap-3">
+                            <input
+                              type="checkbox"
+                              checked={session !== undefined}
+                              onChange={() => {
+                                setSessions((current) => {
+                                  const available = current.filter(
+                                    ({ commandId }) =>
+                                      commandIds.has(commandId),
+                                  );
+                                  return session
+                                    ? available.filter(
+                                        ({ commandId }) =>
+                                          commandId !== command._id,
+                                      )
+                                    : [
+                                        ...available,
+                                        {
+                                          commandId: command._id,
+                                          rating: null,
+                                        },
+                                      ];
+                                });
+                                setError("");
+                                setRatingErrorCommandId(undefined);
+                              }}
+                            />
+                            <span className="font-semibold">
+                              {command.name}
+                            </span>
+                          </label>
+                          {session && (
+                            <fieldset
+                              aria-describedby={
+                                activeRatingErrorCommandId === command._id
+                                  ? "training-rating-error"
+                                  : undefined
+                              }
+                              className="mt-2 border-t border-border pt-2"
+                            >
+                              <legend className="sr-only">
+                                {t("training.commandAssessment", {
+                                  command: command.name,
+                                })}
+                              </legend>
+                              <div className="grid grid-cols-3 gap-2">
+                                {trainingRatings.map(({ icon, value }) => (
+                                  <label
+                                    key={value}
+                                    className="flex min-h-11 cursor-pointer flex-col items-center justify-center rounded-md border border-border bg-card px-1 py-1 text-xs font-semibold has-[:checked]:border-primary has-[:checked]:bg-background has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-ring"
+                                  >
+                                    <input
+                                      className="sr-only"
+                                      type="radio"
+                                      id={`training-rating-${command._id}-${value}`}
+                                      name={`training-rating-${command._id}`}
+                                      value={value}
+                                      aria-describedby={
+                                        activeRatingErrorCommandId ===
+                                        command._id
+                                          ? "training-rating-error"
+                                          : undefined
+                                      }
+                                      aria-invalid={
+                                        activeRatingErrorCommandId ===
+                                        command._id
+                                      }
+                                      checked={session.rating === value}
+                                      onChange={() => {
+                                        setSessions((current) =>
+                                          current.map((item) =>
+                                            item.commandId === command._id
+                                              ? { ...item, rating: value }
+                                              : item,
+                                          ),
+                                        );
+                                        setError("");
+                                        setRatingErrorCommandId(undefined);
+                                      }}
+                                    />
+                                    <span
+                                      aria-hidden="true"
+                                      className="text-lg"
+                                    >
+                                      {icon}
+                                    </span>
+                                    {t(`training.rating.${value}`)}
+                                  </label>
+                                ))}
+                              </div>
+                            </fieldset>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 </fieldset>
               </>
             )}
             {error && (
               <p
+                id={
+                  activeRatingErrorCommandId
+                    ? "training-rating-error"
+                    : undefined
+                }
                 role="alert"
                 className="mt-4 text-sm font-bold text-destructive"
               >
@@ -2976,6 +3287,7 @@ function DashboardPage({ dog }: { dog: DashboardDog }) {
       <div className="flex flex-col gap-8">
         <QuickLogSection
           activeWalk={activeWalk}
+          activityTypes={activityTypes}
           dog={dog}
           error={error}
           feedback={feedback}

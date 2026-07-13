@@ -347,9 +347,7 @@ describe("TrainingPage", () => {
         .map(({ textContent }) => textContent),
     ).toEqual(["New", "Old"]);
 
-    fireEvent.change(screen.getByLabelText("Session rating"), {
-      target: { value: "5" },
-    });
+    fireEvent.click(screen.getByRole("radio", { name: "Positive" }));
     fireEvent.change(screen.getByLabelText("Session notes"), {
       target: { value: "  Great focus.  " },
     });
@@ -370,9 +368,7 @@ describe("TrainingPage", () => {
     fireEvent.change(screen.getByLabelText("Session date and time"), {
       target: { value: "2026-07-09T09:15" },
     });
-    fireEvent.change(screen.getByLabelText("Session rating"), {
-      target: { value: "3" },
-    });
+    fireEvent.click(screen.getByRole("radio", { name: "Neutral" }));
     fireEvent.click(screen.getByRole("button", { name: "Log session" }));
     await waitFor(() =>
       expect(convex.logSession).toHaveBeenCalledWith({
@@ -382,6 +378,33 @@ describe("TrainingPage", () => {
         rating: 3,
       }),
     );
+  });
+
+  it("maps every legacy rating to a semantic history label", () => {
+    const value = command();
+    convex.list = [value];
+    convex.detail = {
+      command: value,
+      sessions: [1, 2, 3, 4, 5].map((rating) =>
+        session({
+          _id: `session-${rating}`,
+          at: Date.parse(`2026-07-0${rating}T10:00:00Z`),
+          notes: undefined,
+          rating,
+        }),
+      ),
+    };
+    renderAt(`/training?command=${commandId}`);
+
+    const history = screen.getByRole("list", { name: "Training sessions" });
+    expect(within(history).getAllByLabelText("Negative rating")).toHaveLength(
+      2,
+    );
+    expect(within(history).getAllByLabelText("Neutral rating")).toHaveLength(1);
+    expect(within(history).getAllByLabelText("Positive rating")).toHaveLength(
+      2,
+    );
+    expect(history).not.toHaveTextContent("/5");
   });
 
   it("keeps long multiline session notes readable in divided history", () => {
@@ -399,10 +422,10 @@ describe("TrainingPage", () => {
     const note = within(history).getByText(/First line/);
     expect(note.textContent).toBe(notes);
     expect(note).toHaveClass("whitespace-pre-wrap", "[overflow-wrap:anywhere]");
-    expect(screen.getByLabelText("Rating 4 out of 5")).toHaveClass(
-      "tabular-nums",
+    expect(screen.getByLabelText("Positive rating")).toHaveTextContent(
+      "Positive",
     );
-    expect(screen.getByLabelText("Rating 4 out of 5")).not.toHaveClass(
+    expect(screen.getByLabelText("Positive rating")).not.toHaveClass(
       "rounded-full",
     );
   });
@@ -414,9 +437,7 @@ describe("TrainingPage", () => {
     convex.detail = { command: recall, sessions: [] };
     renderAt(`/training?command=${commandId}`);
 
-    fireEvent.change(screen.getByLabelText("Session rating"), {
-      target: { value: "5" },
-    });
+    fireEvent.click(screen.getByRole("radio", { name: "Positive" }));
     fireEvent.change(screen.getByLabelText("Session notes"), {
       target: { value: "Recall draft" },
     });
@@ -429,7 +450,11 @@ describe("TrainingPage", () => {
         args: { dogId, commandId: otherCommandId, sessionLimit: 100 },
       }),
     );
-    expect(screen.getByLabelText("Session rating")).toHaveValue(null);
+    expect(screen.getByRole("group", { name: "Session rating" })).toBeVisible();
+    expect(screen.getAllByRole("radio")).toHaveLength(3);
+    for (const rating of screen.getAllByRole("radio")) {
+      expect(rating).not.toBeChecked();
+    }
     expect(screen.getByLabelText("Session notes")).toHaveValue("");
   });
 
@@ -471,7 +496,7 @@ describe("TrainingPage", () => {
       screen.getByRole("link", { name: "Open Recall · Archived" }),
     ).toBeInTheDocument();
     expect(screen.getByLabelText("Description")).toBeDisabled();
-    expect(screen.getByLabelText("Session rating")).toBeDisabled();
+    expect(screen.getByRole("radio", { name: "Negative" })).toBeDisabled();
     expect(screen.getByText("Garden practice")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Restore command" }));
@@ -503,15 +528,12 @@ describe("TrainingPage", () => {
     ).toBeInTheDocument();
     expect(convex.update).not.toHaveBeenCalled();
 
-    fireEvent.change(screen.getByLabelText("Session rating"), {
-      target: { value: "1.5" },
-    });
     fireEvent.change(screen.getByLabelText("Session notes"), {
       target: { value: "x".repeat(501) },
     });
     fireEvent.click(screen.getByRole("button", { name: "Log session" }));
     expect(
-      screen.getByText("Choose a whole number from 1 to 5."),
+      screen.getByText("Choose Negative, Neutral, or Positive."),
     ).toBeInTheDocument();
     expect(
       screen.getByText("Use 500 characters or fewer."),
@@ -668,12 +690,12 @@ describe("TrainingPage", () => {
         name: "Otvoriť povel Recall · Spoľahlivý",
       }),
     ).toBeInTheDocument();
-    expect(screen.getByLabelText("Hodnotenie 4 z 5")).toHaveTextContent("4/5");
+    expect(screen.getByLabelText("Hodnotenie: Pozitívne")).toHaveTextContent(
+      "Pozitívne",
+    );
     expect(screen.getByRole("heading", { name: "Recall" })).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Vybrať iný čas" }));
-    fireEvent.change(screen.getByLabelText("Hodnotenie tréningu"), {
-      target: { value: "4" },
-    });
+    fireEvent.click(screen.getByRole("radio", { name: "Pozitívne" }));
     fireEvent.change(screen.getByLabelText("Dátum a čas tréningu"), {
       target: { value: "2024-01-14T10:00" },
     });

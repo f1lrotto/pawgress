@@ -351,3 +351,105 @@ test("edits Play duration without allowing inverted intervals", async () => {
     }),
   );
 });
+
+test("logs several enrichment activities at one timestamp", async () => {
+  const { activeId, dogId, owner, t } = await setup();
+  const sniffId = await owner.mutation(api.activityTypes.create, {
+    dogId,
+    name: "Sniffing",
+    emoji: "👃",
+  });
+
+  const ids = await owner.mutation(api.activityTypes.logPlays, {
+    dogId,
+    activityTypeIds: [activeId, sniffId],
+    at: validAt,
+  });
+
+  expect(ids).toHaveLength(2);
+  expect(
+    await t.run(({ db }) =>
+      db
+        .query("events")
+        .withIndex("by_dog_at", (q) => q.eq("dogId", dogId))
+        .collect(),
+    ),
+  ).toEqual([
+    expect.objectContaining({
+      activityTypeId: activeId,
+      at: validAt,
+      kind: "play",
+    }),
+    expect.objectContaining({
+      activityTypeId: sniffId,
+      at: validAt,
+      kind: "play",
+    }),
+  ]);
+});
+
+test("validates every enrichment activity before inserting any", async () => {
+  const { activeId, archivedId, dogId, otherTypeId, owner, t } = await setup();
+  const tooManyIds = await t.run(({ db }) =>
+    Promise.all(
+      Array.from({ length: 101 }, (_, index) =>
+        db.insert("activityTypes", {
+          dogId,
+          name: `Extra ${index}`,
+          isArchived: false,
+        }),
+      ),
+    ),
+  );
+
+  await expect(
+    owner.mutation(api.activityTypes.logPlays, {
+      dogId,
+      activityTypeIds: [],
+      at: validAt,
+    }),
+  ).rejects.toThrow("INVALID_ACTIVITY_TYPES");
+  await expect(
+    owner.mutation(api.activityTypes.logPlays, {
+      dogId,
+      activityTypeIds: [activeId, activeId],
+      at: validAt,
+    }),
+  ).rejects.toThrow("INVALID_ACTIVITY_TYPES");
+  await expect(
+    owner.mutation(api.activityTypes.logPlays, {
+      dogId,
+      activityTypeIds: tooManyIds,
+      at: validAt,
+    }),
+  ).rejects.toThrow("INVALID_ACTIVITY_TYPES");
+  await expect(
+    owner.mutation(api.activityTypes.logPlays, {
+      dogId,
+      activityTypeIds: [activeId],
+      at: -1,
+    }),
+  ).rejects.toThrow("INVALID_TIMESTAMP");
+  await expect(
+    owner.mutation(api.activityTypes.logPlays, {
+      dogId,
+      activityTypeIds: [activeId, archivedId],
+      at: validAt,
+    }),
+  ).rejects.toThrow("ACTIVITY_TYPE_ARCHIVED");
+  await expect(
+    owner.mutation(api.activityTypes.logPlays, {
+      dogId,
+      activityTypeIds: [activeId, otherTypeId],
+      at: validAt,
+    }),
+  ).rejects.toThrow("ACTIVITY_TYPE_NOT_FOUND");
+  await expect(
+    t.run(({ db }) =>
+      db
+        .query("events")
+        .withIndex("by_dog_at", (q) => q.eq("dogId", dogId))
+        .collect(),
+    ),
+  ).resolves.toEqual([]);
+});

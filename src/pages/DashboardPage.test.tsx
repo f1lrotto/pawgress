@@ -31,6 +31,7 @@ const convex = vi.hoisted(() => ({
     walk: null,
   } as Record<string, unknown> | undefined,
   log: vi.fn(),
+  playsLog: vi.fn(),
   pottyLog: vi.fn(),
   queryCalls: [] as Array<{ name: string; args: unknown }>,
   recent: [] as unknown[] | undefined,
@@ -48,11 +49,12 @@ vi.mock("convex/react", () => ({
   useMutation: (reference: unknown) => {
     const name = getFunctionName(reference as never);
     if (name === "events:logQuick") return convex.log;
+    if (name === "activityTypes:logPlays") return convex.playsLog;
     if (name === "walks:logPotty") return convex.pottyLog;
     if (name === "walks:updateDiary") return convex.diaryUpdate;
     if (name === "walks:start") return convex.walkStart;
     if (name === "walks:end") return convex.walkEnd;
-    if (name === "training:logSessions") return convex.trainingLog;
+    if (name === "training:logRatedSessions") return convex.trainingLog;
     return name === "events:update" ? convex.update : convex.remove;
   },
   useQuery: (reference: unknown, args: unknown) => {
@@ -146,6 +148,8 @@ beforeEach(() => {
   };
   convex.log.mockReset();
   convex.log.mockResolvedValue("event-id");
+  convex.playsLog.mockReset();
+  convex.playsLog.mockResolvedValue(["play-id"]);
   convex.pottyLog.mockReset();
   convex.pottyLog.mockResolvedValue("potty-id");
   convex.queryCalls = [];
@@ -166,7 +170,7 @@ beforeEach(() => {
 });
 
 describe("DashboardPage quick logging", () => {
-  it("logs selected training commands with a quick assessment", async () => {
+  it("logs selected training commands with individual ratings", async () => {
     vi.spyOn(Date, "now").mockReturnValue(123_456);
     convex.trainingCommands = [
       { _id: "sit-id", name: "Sit" },
@@ -185,7 +189,12 @@ describe("DashboardPage quick logging", () => {
     const dialog = screen.getByRole("dialog", { name: "Log training" });
     fireEvent.click(within(dialog).getByRole("checkbox", { name: "Sit" }));
     fireEvent.click(within(dialog).getByRole("checkbox", { name: "Stay" }));
-    fireEvent.click(within(dialog).getByRole("radio", { name: "Thumbs up" }));
+    fireEvent.click(
+      within(dialog).getAllByRole("radio", { name: "Positive" })[0],
+    );
+    fireEvent.click(
+      within(dialog).getAllByRole("radio", { name: "Neutral" })[1],
+    );
     fireEvent.click(
       within(dialog).getByRole("button", { name: "Save training" }),
     );
@@ -193,12 +202,285 @@ describe("DashboardPage quick logging", () => {
     await waitFor(() =>
       expect(convex.trainingLog).toHaveBeenCalledWith({
         dogId,
-        commandIds: ["sit-id", "stay-id"],
         at: 123_456,
-        rating: 5,
+        sessions: [
+          { commandId: "sit-id", rating: "positive" },
+          { commandId: "stay-id", rating: "neutral" },
+        ],
       }),
     );
     expect(dialog).not.toHaveAttribute("open");
+  });
+
+  it("requires a rating for every selected training command", async () => {
+    convex.trainingCommands = [
+      { _id: "sit-id", name: "Sit" },
+      { _id: "stay-id", name: "Stay" },
+    ];
+    HTMLDialogElement.prototype.showModal = function () {
+      this.open = true;
+    };
+    render(<DashboardPage dog={dog} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Log training" }));
+    const dialog = screen.getByRole("dialog", { name: "Log training" });
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "Sit" }));
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "Stay" }));
+    fireEvent.click(
+      within(dialog).getAllByRole("radio", { name: "Positive" })[0],
+    );
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Save training" }),
+    );
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "Rate every selected command.",
+    );
+    const firstUnrated = within(dialog).getAllByRole("radio", {
+      name: "Negative",
+    })[1];
+    await waitFor(() => expect(firstUnrated).toHaveFocus());
+    expect(firstUnrated).toHaveAttribute(
+      "aria-describedby",
+      "training-rating-error",
+    );
+    expect(firstUnrated).toHaveAttribute("aria-invalid", "true");
+    expect(firstUnrated.closest("label")).toHaveClass(
+      "has-[:focus-visible]:outline-2",
+    );
+    expect(convex.trainingLog).not.toHaveBeenCalled();
+  });
+
+  it("drops a selected command when it is archived while the dialog is open", async () => {
+    convex.trainingCommands = [
+      { _id: "sit-id", name: "Sit" },
+      { _id: "stay-id", name: "Stay" },
+    ];
+    HTMLDialogElement.prototype.showModal = function () {
+      this.open = true;
+    };
+    HTMLDialogElement.prototype.close = function () {
+      this.open = false;
+      this.dispatchEvent(new Event("close"));
+    };
+    const { rerender } = render(<DashboardPage dog={dog} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Log training" }));
+    const dialog = screen.getByRole("dialog", { name: "Log training" });
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "Sit" }));
+    fireEvent.click(within(dialog).getByRole("radio", { name: "Positive" }));
+
+    convex.trainingCommands = [{ _id: "stay-id", name: "Stay" }];
+    rerender(<DashboardPage dog={dog} />);
+    expect(
+      within(dialog).queryByRole("checkbox", { name: "Sit" }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Save training" }),
+    );
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "Select at least one command.",
+    );
+    expect(convex.trainingLog).not.toHaveBeenCalled();
+
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "Stay" }));
+    fireEvent.click(within(dialog).getByRole("radio", { name: "Neutral" }));
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Save training" }),
+    );
+    await waitFor(() =>
+      expect(convex.trainingLog).toHaveBeenCalledWith({
+        at: expect.any(Number),
+        dogId,
+        sessions: [{ commandId: "stay-id", rating: "neutral" }],
+      }),
+    );
+  });
+
+  it("logs multiple active enrichment activities at one current timestamp", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(123_456);
+    convex.activityTypes = [
+      activityType(),
+      activityType({ _id: "snuffle-id", emoji: "👃", name: "Snuffle mat" }),
+      activityType({
+        _id: archivedTypeId,
+        isArchived: true,
+        name: "Archived game",
+      }),
+    ];
+    HTMLDialogElement.prototype.showModal = function () {
+      this.open = true;
+    };
+    HTMLDialogElement.prototype.close = function () {
+      this.open = false;
+      this.dispatchEvent(new Event("close"));
+    };
+    render(<DashboardPage dog={dog} />);
+
+    const opener = screen.getByRole("button", { name: "Log enrichment" });
+    fireEvent.click(opener);
+    const dialog = screen.getByRole("dialog", { name: "Log enrichment" });
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "Tug" }));
+    fireEvent.click(
+      within(dialog).getByRole("checkbox", { name: "Snuffle mat" }),
+    );
+    expect(
+      within(dialog).queryByRole("checkbox", { name: "Archived game" }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Save enrichment" }),
+    );
+
+    await waitFor(() =>
+      expect(convex.playsLog).toHaveBeenCalledWith({
+        activityTypeIds: [tugId, "snuffle-id"],
+        at: 123_456,
+        dogId,
+      }),
+    );
+    expect(opener).toHaveFocus();
+    fireEvent.click(opener);
+    expect(
+      within(dialog).getByRole("checkbox", { name: "Tug" }),
+    ).not.toBeChecked();
+  });
+
+  it("logs enrichment at a selected earlier time", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-07-09T12:00:00Z"));
+    convex.activityTypes = [activityType()];
+    HTMLDialogElement.prototype.showModal = function () {
+      this.open = true;
+    };
+    HTMLDialogElement.prototype.close = function () {
+      this.open = false;
+      this.dispatchEvent(new Event("close"));
+    };
+    render(<DashboardPage dog={dog} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Earlier" }));
+    fireEvent.click(screen.getByRole("button", { name: "Log enrichment" }));
+    const dialog = screen.getByRole("dialog", { name: "Log enrichment" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "30 min ago" }));
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "Tug" }));
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Save enrichment" }),
+    );
+
+    await waitFor(() =>
+      expect(convex.playsLog).toHaveBeenCalledWith({
+        activityTypeIds: [tugId],
+        at: Date.parse("2026-07-09T11:30:00Z"),
+        dogId,
+      }),
+    );
+  });
+
+  it("drops a selected enrichment activity archived while the dialog is open", async () => {
+    convex.activityTypes = [
+      activityType(),
+      activityType({ _id: "snuffle-id", name: "Snuffle mat" }),
+    ];
+    HTMLDialogElement.prototype.showModal = function () {
+      this.open = true;
+    };
+    HTMLDialogElement.prototype.close = function () {
+      this.open = false;
+      this.dispatchEvent(new Event("close"));
+    };
+    const { rerender } = render(<DashboardPage dog={dog} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Log enrichment" }));
+    const dialog = screen.getByRole("dialog", { name: "Log enrichment" });
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "Tug" }));
+
+    convex.activityTypes = [
+      activityType({ isArchived: true }),
+      activityType({ _id: "snuffle-id", name: "Snuffle mat" }),
+    ];
+    rerender(<DashboardPage dog={dog} />);
+    expect(
+      within(dialog).queryByRole("checkbox", { name: "Tug" }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Save enrichment" }),
+    );
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "Select at least one activity.",
+    );
+    expect(convex.playsLog).not.toHaveBeenCalled();
+
+    fireEvent.click(
+      within(dialog).getByRole("checkbox", { name: "Snuffle mat" }),
+    );
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Save enrichment" }),
+    );
+    await waitFor(() =>
+      expect(convex.playsLog).toHaveBeenCalledWith({
+        activityTypeIds: ["snuffle-id"],
+        at: expect.any(Number),
+        dogId,
+      }),
+    );
+  });
+
+  it("shows enrichment loading and empty setup states", () => {
+    convex.activityTypes = undefined;
+    HTMLDialogElement.prototype.showModal = function () {
+      this.open = true;
+    };
+    const { rerender } = render(<DashboardPage dog={dog} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Log enrichment" }));
+    expect(
+      screen.getByRole("status", { name: "Loading enrichment activities…" }),
+    ).toBeInTheDocument();
+
+    convex.activityTypes = [
+      activityType({ _id: archivedTypeId, isArchived: true }),
+    ];
+    rerender(<DashboardPage dog={dog} />);
+    expect(
+      screen.getByRole("link", { name: "Set up enrichment activities" }),
+    ).toHaveAttribute("href", "/enrichment");
+  });
+
+  it("prevents duplicate enrichment saves and recovers after failure", async () => {
+    let fail!: () => void;
+    convex.activityTypes = [activityType()];
+    convex.playsLog.mockImplementation(
+      () =>
+        new Promise((_, reject) => {
+          fail = () => reject(new Error("network"));
+        }),
+    );
+    HTMLDialogElement.prototype.showModal = function () {
+      this.open = true;
+    };
+    render(<DashboardPage dog={dog} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Log enrichment" }));
+    const dialog = screen.getByRole("dialog", { name: "Log enrichment" });
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: "Tug" }));
+    const save = within(dialog).getByRole("button", {
+      name: "Save enrichment",
+    });
+    fireEvent.click(save);
+    fireEvent.click(save);
+
+    expect(convex.playsLog).toHaveBeenCalledTimes(1);
+    expect(
+      within(dialog).getByRole("button", { name: "Saving…" }),
+    ).toBeDisabled();
+    fail();
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "We couldn't save that enrichment. Try again.",
+    );
+    expect(
+      within(dialog).getByRole("button", { name: "Save enrichment" }),
+    ).toBeEnabled();
   });
 
   it("links to training setup when there are no active commands", () => {
@@ -220,6 +502,10 @@ describe("DashboardPage quick logging", () => {
     const actionGroup = within(quickLog).getByRole("group", {
       name: "Log an activity",
     });
+
+    expect(
+      within(actionGroup).getByRole("button", { name: "Log training" }),
+    ).not.toHaveClass("col-span-2");
 
     ["Pee", "Poop", "Meal", "Treat", "Woke up", "Fell asleep"].forEach(
       (label) => {
@@ -396,9 +682,8 @@ describe("DashboardPage quick logging", () => {
     await waitFor(() =>
       expect(convex.trainingLog).toHaveBeenCalledWith({
         at: Date.parse("2026-07-09T11:45:00Z"),
-        commandIds: ["sit-id"],
         dogId,
-        rating: 3,
+        sessions: [{ commandId: "sit-id", rating: "neutral" }],
       }),
     );
   });
