@@ -26,12 +26,14 @@ type PottyBucket = {
   peeOutside: number;
   poop: number;
 };
-type WalkInterval = {
+type OutingKind = "walk" | "pee" | "poop";
+type OutingInterval = {
   fromWalkAt: number;
   fromWalkEndedAt: number;
   intervalMs: number;
   mealAts: number[];
   toWalkAt: number;
+  toKinds?: OutingKind[];
 };
 type SleepTotal = { date: string; sleepMs: number };
 type DayRating = { date: string; rating: number };
@@ -444,12 +446,12 @@ export function PottyInsight({
   );
 }
 
-export function WalkInsight({
+export function OutingInsight({
   intervals,
   loading,
   timezone,
 }: {
-  intervals: WalkInterval[];
+  intervals: OutingInterval[];
   loading: boolean;
   timezone: string;
 }) {
@@ -465,6 +467,11 @@ export function WalkInsight({
       }),
     [locale, timezone],
   );
+  const kindLabels: Record<OutingKind, string> = {
+    walk: t("charts.outing.kinds.walk"),
+    pee: t("charts.outing.kinds.pee"),
+    poop: t("charts.outing.kinds.poop"),
+  };
   const data = [...intervals]
     .sort((left, right) => left.toWalkAt - right.toWalkAt)
     .map((interval) => ({
@@ -478,11 +485,11 @@ export function WalkInsight({
 
   return (
     <ChartCard
-      title={t("charts.walk.title")}
-      description={t("charts.walk.description")}
-      empty={t("charts.walk.empty")}
+      title={t("charts.outing.title")}
+      description={t("charts.outing.description")}
+      empty={t("charts.outing.empty")}
       loading={loading}
-      meta={t("charts.walk.meta")}
+      meta={t("charts.outing.meta")}
     >
       {data.length > 0 && (
         <>
@@ -504,13 +511,13 @@ export function WalkInsight({
                 <ChartLegend />
                 <Bar
                   dataKey="intervalHours"
-                  name={t("charts.walk.series")}
+                  name={t("charts.outing.series")}
                   fill="var(--chart-3)"
                   isAnimationActive={false}
                 />
                 <Line
                   dataKey="mealMarker"
-                  name={t("charts.walk.mealMarker")}
+                  name={t("charts.outing.mealMarker")}
                   stroke="transparent"
                   dot={{ fill: "var(--chart-5)", r: 6, strokeWidth: 0 }}
                   isAnimationActive={false}
@@ -518,26 +525,31 @@ export function WalkInsight({
               </ComposedChart>
             </ResponsiveContainer>
           </div>
-          <ol aria-label={t("charts.walk.data")} className={listClassName}>
-            {data.map(({ intervalHours, mealAts, toWalkAt, label }) => (
-              <li key={toWalkAt} className="py-2">
-                {t("charts.walk.interval", {
-                  date: label,
-                  hours: hoursText(intervalHours),
-                })}
-                {mealAts.length ? (
-                  <span>
-                    {t("charts.walk.meal", {
-                      dates: mealAts
-                        .map((at) => formatter.format(at))
-                        .join(", "),
-                    })}
-                  </span>
-                ) : (
-                  <span>{t("charts.walk.noMeal")}</span>
-                )}
-              </li>
-            ))}
+          <ol aria-label={t("charts.outing.data")} className={listClassName}>
+            {data.map(
+              ({ intervalHours, mealAts, toKinds, toWalkAt, label }) => (
+                <li key={toWalkAt} className="py-2">
+                  {t("charts.outing.interval", {
+                    date: label,
+                    hours: hoursText(intervalHours),
+                    kinds: (toKinds ?? ["walk"])
+                      .map((kind) => kindLabels[kind])
+                      .join(" + "),
+                  })}
+                  {mealAts.length ? (
+                    <span>
+                      {t("charts.outing.meal", {
+                        dates: mealAts
+                          .map((at) => formatter.format(at))
+                          .join(", "),
+                      })}
+                    </span>
+                  ) : (
+                    <span>{t("charts.outing.noMeal")}</span>
+                  )}
+                </li>
+              ),
+            )}
           </ol>
         </>
       )}

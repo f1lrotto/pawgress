@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest";
 
 import {
   bucketPottyByHour,
-  buildWalkIntervals,
+  buildOutingIntervals,
   sumSleepByDay,
 } from "./insights";
+
+const minute = 60_000;
 
 describe("bucketPottyByHour", () => {
   it("combines both occurrences of a repeated DST hour", () => {
@@ -46,43 +48,46 @@ describe("bucketPottyByHour", () => {
   });
 });
 
-describe("buildWalkIntervals", () => {
-  it("pairs completed walks and includes meals only between them", () => {
+describe("buildOutingIntervals", () => {
+  it("merges one trip and pairs walks with standalone potty outings", () => {
     expect(
-      buildWalkIntervals(
+      buildOutingIntervals(
         [
-          { at: 10, endedAt: 20 },
-          { at: 25 },
-          { at: 30, endedAt: 40 },
-          { at: 50, endedAt: 60 },
+          { at: 60 * minute, endedAt: 60 * minute, kind: "pee" },
+          { at: 0, endedAt: 5 * minute, kind: "walk" },
+          { at: 15 * minute, endedAt: 15 * minute, kind: "pee" },
+          { at: 18 * minute, endedAt: 18 * minute, kind: "poop" },
+          { at: 40 * minute, endedAt: 45 * minute, kind: "walk" },
         ],
-        [{ at: 20 }, { at: 29 }, { at: 30 }, { at: 49 }, { at: 50 }],
+        [17, 18, 39, 40, 59, 60].map((at) => ({ at: at * minute })),
       ),
     ).toEqual([
       {
-        fromWalkAt: 10,
-        fromWalkEndedAt: 20,
-        toWalkAt: 30,
-        intervalMs: 10,
-        mealAts: [20, 29],
+        fromWalkAt: 0,
+        fromWalkEndedAt: 18 * minute,
+        toWalkAt: 40 * minute,
+        toKinds: ["walk"],
+        intervalMs: 22 * minute,
+        mealAts: [18 * minute, 39 * minute],
       },
       {
-        fromWalkAt: 30,
-        fromWalkEndedAt: 40,
-        toWalkAt: 50,
-        intervalMs: 10,
-        mealAts: [49],
+        fromWalkAt: 40 * minute,
+        fromWalkEndedAt: 45 * minute,
+        toWalkAt: 60 * minute,
+        toKinds: ["pee"],
+        intervalMs: 15 * minute,
+        mealAts: [59 * minute],
       },
     ]);
   });
 
-  it("sorts inputs without mutating them and drops overlapping pairs", () => {
-    const walks = [
-      { at: 30, endedAt: 35 },
-      { at: 10, endedAt: 40 },
+  it("sorts inputs without mutating them", () => {
+    const outings = [
+      { at: 30 * minute, endedAt: 35 * minute, kind: "walk" as const },
+      { at: 10 * minute, endedAt: 40 * minute, kind: "walk" as const },
     ];
-    expect(buildWalkIntervals(walks, [])).toEqual([]);
-    expect(walks[0].at).toBe(30);
+    expect(buildOutingIntervals(outings, [])).toEqual([]);
+    expect(outings[0].at).toBe(30 * minute);
   });
 });
 

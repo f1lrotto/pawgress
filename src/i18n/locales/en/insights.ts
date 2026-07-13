@@ -120,19 +120,24 @@ const insights = {
       series: "Sleep hours",
       title: "Sleep ledger",
     },
-    walk: {
-      data: "Walk interval data",
+    outing: {
+      data: "Outing interval data",
       description:
-        "Time from one finished walk to the next start, with meals marked along the way.",
+        "Time between outdoor outings, whether they were walks, outside pees, or poops.",
       empty:
-        "Log at least two completed walks to compare the time between them.",
-      interval: "{{hours}} until the walk at {{date}}. ",
+        "Log at least two walks or outside potty trips to compare the time between them.",
+      interval: "{{hours}} until {{kinds}} at {{date}}. ",
+      kinds: {
+        walk: "walk",
+        pee: "outside pee",
+        poop: "poop",
+      },
       meal: "Meal marker: {{dates}}.",
       mealMarker: "Meal marker",
       meta: "Last 30 local days · hours",
-      noMeal: "No meal between walks.",
-      series: "Hours between walks",
-      title: "Walk rhythm",
+      noMeal: "No meal between outings.",
+      series: "Hours between outings",
+      title: "Outing rhythm",
     },
     weight: {
       data: "Weight history data",
@@ -146,7 +151,7 @@ const insights = {
     },
   },
   page: {
-    body: "See patterns in weight, potty breaks, walks, sleep, and daily ratings. Exact values appear below each chart.",
+    body: "See patterns in weight, potty breaks, outdoor outings, sleep, and daily ratings. Exact values appear below each chart.",
     errorBody:
       "We couldn't load these insights. Check your connection, then reload the page.",
     errorTitle: "Insights are unavailable",

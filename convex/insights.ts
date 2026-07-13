@@ -5,7 +5,7 @@ import type { QueryCtx } from "./_generated/server";
 import { dogQuery } from "./lib/functions";
 import {
   bucketPottyByHour,
-  buildWalkIntervals,
+  buildOutingIntervals,
   type InsightDay,
   type RestEvent,
   sumSleepByDay,
@@ -26,10 +26,16 @@ const pottyBucket = v.object({
   peeOutside: v.number(),
   poop: v.number(),
 });
+const outingKind = v.union(
+  v.literal("walk"),
+  v.literal("pee"),
+  v.literal("poop"),
+);
 const walkInterval = v.object({
   fromWalkAt: v.number(),
   fromWalkEndedAt: v.number(),
   toWalkAt: v.number(),
+  toKinds: v.array(outingKind),
   intervalMs: v.number(),
   mealAts: v.array(v.number()),
 });
@@ -157,11 +163,30 @@ export const walkIntervals = dogQuery({
   returns: v.array(walkInterval),
   handler: async (ctx, { dogId, startAt, endAt }) => {
     validateWindow(startAt, endAt);
-    const [walks, meals] = await Promise.all([
+    const [walks, pees, poops, meals] = await Promise.all([
       eventsByKind(ctx, dogId, "walk", startAt, endAt),
+      eventsByKind(ctx, dogId, "pee", startAt, endAt),
+      eventsByKind(ctx, dogId, "poop", startAt, endAt),
       eventsByKind(ctx, dogId, "meal", startAt, endAt),
     ]);
-    return buildWalkIntervals(walks, meals);
+    return buildOutingIntervals(
+      [
+        ...walks.flatMap(({ at, endedAt }) =>
+          endedAt === undefined ? [] : [{ at, endedAt, kind: "walk" as const }],
+        ),
+        ...pees.flatMap(({ at, peePlace, walkId }) =>
+          peePlace === "outside" && walkId === undefined
+            ? [{ at, endedAt: at, kind: "pee" as const }]
+            : [],
+        ),
+        ...poops.flatMap(({ at, walkId }) =>
+          walkId === undefined
+            ? [{ at, endedAt: at, kind: "poop" as const }]
+            : [],
+        ),
+      ],
+      meals,
+    );
   },
 });
 
