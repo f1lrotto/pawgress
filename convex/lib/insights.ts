@@ -5,9 +5,16 @@ export type PottyEvent = {
   at: number;
   peePlace?: "inside" | "outside";
 };
-export type WalkEvent = { at: number; endedAt?: number };
+export type OutingKind = "walk" | "pee" | "poop";
+export type OutingEvent = {
+  at: number;
+  endedAt: number;
+  kind: OutingKind;
+};
 export type RestEvent = { kind: "wake" | "sleep"; at: number };
 export type InsightDay = { date: string; startAt: number; endAt: number };
+
+const outingMergeMs = 10 * 60 * 1_000;
 
 const zonedHour = (at: number, timezone: string) => {
   if (!timezone || /^[+-]/.test(timezone)) throw new RangeError("Invalid zone");
@@ -33,19 +40,37 @@ export const bucketPottyByHour = (events: PottyEvent[], timezone: string) => {
   return buckets;
 };
 
-export const buildWalkIntervals = (
-  walks: WalkEvent[],
+export const buildOutingIntervals = (
+  outings: OutingEvent[],
   meals: Array<{ at: number }>,
 ) => {
-  const completed = walks
-    .filter((walk): walk is Required<WalkEvent> => walk.endedAt !== undefined)
-    .sort((left, right) => left.at - right.at);
+  const merged = [...outings]
+    .sort((left, right) => left.at - right.at)
+    .reduce<Array<Omit<OutingEvent, "kind"> & { kinds: OutingKind[] }>>(
+      (result, outing) => {
+        const previous = result.at(-1);
+        if (!previous || outing.at > previous.endedAt + outingMergeMs) {
+          result.push({
+            at: outing.at,
+            endedAt: outing.endedAt,
+            kinds: [outing.kind],
+          });
+          return result;
+        }
+        result[result.length - 1] = {
+          ...previous,
+          endedAt: Math.max(previous.endedAt, outing.endedAt),
+          kinds: [...new Set([...previous.kinds, outing.kind])],
+        };
+        return result;
+      },
+      [],
+    );
   const mealAts = meals.map(({ at }) => at).sort((left, right) => left - right);
   let mealIndex = 0;
 
-  return completed.slice(1).flatMap((to, index) => {
-    const from = completed[index];
-    if (from.endedAt > to.at) return [];
+  return merged.slice(1).map((to, index) => {
+    const from = merged[index];
     while (mealIndex < mealAts.length && mealAts[mealIndex] < from.endedAt) {
       mealIndex += 1;
     }
@@ -54,15 +79,14 @@ export const buildWalkIntervals = (
       between.push(mealAts[mealIndex]);
       mealIndex += 1;
     }
-    return [
-      {
-        fromWalkAt: from.at,
-        fromWalkEndedAt: from.endedAt,
-        toWalkAt: to.at,
-        intervalMs: to.at - from.endedAt,
-        mealAts: between,
-      },
-    ];
+    return {
+      fromWalkAt: from.at,
+      fromWalkEndedAt: from.endedAt,
+      toWalkAt: to.at,
+      toKinds: to.kinds,
+      intervalMs: to.at - from.endedAt,
+      mealAts: between,
+    };
   });
 };
 

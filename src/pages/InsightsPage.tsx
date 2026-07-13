@@ -14,10 +14,10 @@ import type { Doc } from "../../convex/_generated/dataModel";
 import AppFrame from "@/components/AppFrame";
 import BodyMetricsPanel from "@/components/BodyMetricsPanel";
 import {
+  OutingInsight,
   PottyInsight,
   RatingInsight,
   SleepInsight,
-  WalkInsight,
   WeightInsight,
 } from "@/components/insights/InsightCharts";
 import { Button } from "@/components/ui/button";
@@ -91,7 +91,7 @@ function InsightsContent({ dog }: { dog: InsightsDog }) {
     ? { dogId: dog._id, startAt: first.startAt, endAt: last.endAt }
     : "skip";
   const potty = useQuery(api.insights.pottyByHour, windowArgs);
-  const walks = useQuery(api.insights.walkIntervals, windowArgs);
+  const outings = useQuery(api.insights.walkIntervals, windowArgs);
   const sleep = useQuery(
     api.insights.sleepByDay,
     validRange ? { dogId: dog._id, days } : "skip",
@@ -140,9 +140,9 @@ function InsightsContent({ dog }: { dog: InsightsDog }) {
               timezone={dog.timezone}
             />
             <PottyInsight loading={potty === undefined} buckets={potty ?? []} />
-            <WalkInsight
-              loading={walks === undefined}
-              intervals={walks ?? []}
+            <OutingInsight
+              loading={outings === undefined}
+              intervals={outings ?? []}
               timezone={dog.timezone}
             />
             <SleepInsight loading={sleep === undefined} totals={sleep ?? []} />

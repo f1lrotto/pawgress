@@ -123,19 +123,24 @@ const insights = {
       series: "Hodiny spánku",
       title: "Denník spánku",
     },
-    walk: {
-      data: "Údaje o intervaloch medzi prechádzkami",
+    outing: {
+      data: "Údaje o intervaloch medzi venčeniami",
       description:
-        "Čas od skončenia jednej prechádzky po začiatok ďalšej vrátane jedál medzi nimi.",
+        "Čas medzi pobytmi vonku vrátane prechádzok, cikania vonku a kakania.",
       empty:
-        "Zaznamenajte aspoň dve dokončené prechádzky, aby sa dal porovnať čas medzi nimi.",
-      interval: "{{hours}} do prechádzky o {{date}}. ",
+        "Zaznamenajte aspoň dve prechádzky alebo krátke venčenia, aby sa dal porovnať čas medzi nimi.",
+      interval: "{{hours}} do ďalšieho venčenia ({{kinds}}) o {{date}}. ",
+      kinds: {
+        walk: "prechádzka",
+        pee: "cikanie vonku",
+        poop: "kakanie",
+      },
       meal: "Jedlo: {{dates}}.",
       mealMarker: "Jedlo",
       meta: "Posledných 30 miestnych dní · hodiny",
-      noMeal: "Medzi prechádzkami nebolo žiadne jedlo.",
-      series: "Hodiny medzi prechádzkami",
-      title: "Rytmus prechádzok",
+      noMeal: "Medzi venčeniami nebolo žiadne jedlo.",
+      series: "Hodiny medzi venčeniami",
+      title: "Rytmus venčenia",
     },
     weight: {
       data: "História hmotnosti",
@@ -149,7 +154,7 @@ const insights = {
     },
   },
   page: {
-    body: "Pozrite si vzorce v hmotnosti, potrebe, prechádzkach, spánku a denných hodnoteniach. Presné hodnoty sú pod každým grafom.",
+    body: "Pozrite si vzorce v hmotnosti, potrebe, venčení, spánku a denných hodnoteniach. Presné hodnoty sú pod každým grafom.",
     errorBody:
       "Tieto prehľady sa nepodarilo načítať. Skontrolujte pripojenie a znova načítajte stránku.",
     errorTitle: "Prehľady nie sú dostupné",

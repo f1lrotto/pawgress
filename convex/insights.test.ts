@@ -168,54 +168,98 @@ describe("insight aggregations", () => {
     });
   });
 
-  it("builds completed walk intervals with exact meal boundaries", async () => {
+  it("builds outings from walks and standalone outside potty", async () => {
     const { t, owner, dogId, ownerId } = await setup();
-    await t.run(({ db }) =>
-      Promise.all([
+    await t.run(async ({ db }) => {
+      const walkId = await db.insert("events", {
+        dogId,
+        userId: ownerId,
+        kind: "walk",
+        at: 0,
+        endedAt: 5 * 60_000,
+      });
+      const activeWalkId = await db.insert("events", {
+        dogId,
+        userId: ownerId,
+        kind: "walk",
+        at: 20 * 60_000,
+      });
+      await Promise.all([
         db.insert("events", {
           dogId,
           userId: ownerId,
-          kind: "walk",
-          at: 10,
-          endedAt: 20,
+          kind: "pee",
+          at: 2 * 60_000,
+          peePlace: "outside",
+          walkId,
         }),
         db.insert("events", {
           dogId,
           userId: ownerId,
-          kind: "walk",
-          at: 25,
+          kind: "poop",
+          at: 21 * 60_000,
+          walkId: activeWalkId,
         }),
         db.insert("events", {
           dogId,
           userId: ownerId,
-          kind: "walk",
-          at: 30,
-          endedAt: 40,
+          kind: "pee",
+          at: 30 * 60_000,
+          peePlace: "outside",
         }),
-        ...[20, 29, 30].map((at) =>
+        db.insert("events", {
+          dogId,
+          userId: ownerId,
+          kind: "poop",
+          at: 35 * 60_000,
+        }),
+        db.insert("events", {
+          dogId,
+          userId: ownerId,
+          kind: "pee",
+          at: 45 * 60_000,
+          peePlace: "inside",
+        }),
+        db.insert("events", {
+          dogId,
+          userId: ownerId,
+          kind: "pee",
+          at: 60 * 60_000,
+          peePlace: "outside",
+        }),
+        ...[5, 29, 35, 59, 60].map((at) =>
           db.insert("events", {
             dogId,
             userId: ownerId,
             kind: "meal",
-            at,
+            at: at * 60_000,
           }),
         ),
-      ]),
-    );
+      ]);
+    });
 
     await expect(
       owner.query(insights.walkIntervals, {
         dogId,
-        startAt: 10,
-        endAt: 41,
+        startAt: 0,
+        endAt: 61 * 60_000,
       }),
     ).resolves.toEqual([
       {
-        fromWalkAt: 10,
-        fromWalkEndedAt: 20,
-        toWalkAt: 30,
-        intervalMs: 10,
-        mealAts: [20, 29],
+        fromWalkAt: 0,
+        fromWalkEndedAt: 5 * 60_000,
+        toWalkAt: 30 * 60_000,
+        toKinds: ["pee", "poop"],
+        intervalMs: 25 * 60_000,
+        mealAts: [5 * 60_000, 29 * 60_000],
+      },
+      {
+        fromWalkAt: 30 * 60_000,
+        fromWalkEndedAt: 35 * 60_000,
+        toWalkAt: 60 * 60_000,
+        toKinds: ["pee"],
+        intervalMs: 25 * 60_000,
+        mealAts: [35 * 60_000, 59 * 60_000],
       },
     ]);
   });

@@ -21,7 +21,7 @@ const convex = vi.hoisted(() => ({
   queryCalls: [] as Array<{ args: unknown; name: string }>,
   ratings: undefined as unknown,
   sleep: undefined as unknown,
-  walks: undefined as unknown,
+  outings: undefined as unknown,
 }));
 
 vi.mock("convex/react", () => ({
@@ -31,7 +31,7 @@ vi.mock("convex/react", () => ({
     if (convex.error) throw convex.error;
     if (args === "skip") return undefined;
     if (name === "insights:pottyByHour") return convex.potty;
-    if (name === "insights:walkIntervals") return convex.walks;
+    if (name === "insights:walkIntervals") return convex.outings;
     if (name === "insights:sleepByDay") return convex.sleep;
     if (name === "insights:dayRatings") return convex.ratings;
     return convex.metrics;
@@ -105,7 +105,7 @@ const emptyResults = () => {
   convex.potty = [];
   convex.ratings = [];
   convex.sleep = [];
-  convex.walks = [];
+  convex.outings = [];
 };
 
 afterEach(() => {
@@ -123,7 +123,7 @@ beforeEach(async () => {
   convex.queryCalls = [];
   convex.ratings = undefined;
   convex.sleep = undefined;
-  convex.walks = undefined;
+  convex.outings = undefined;
 });
 
 describe("InsightsPage", () => {
@@ -211,7 +211,7 @@ describe("InsightsPage", () => {
     ).toBeInTheDocument();
     expect(
       screen.getByText(
-        "Log at least two completed walks to compare the time between them.",
+        "Log at least two walks or outside potty trips to compare the time between them.",
       ),
     ).toBeInTheDocument();
     expect(
@@ -271,13 +271,14 @@ describe("InsightsPage", () => {
       peeOutside: hour === 2 ? 2 : 0,
       poop: hour === 2 ? 1 : 0,
     }));
-    convex.walks = [
+    convex.outings = [
       {
         fromWalkAt: Date.parse("2026-07-08T08:00:00Z"),
         fromWalkEndedAt: Date.parse("2026-07-08T08:30:00Z"),
         intervalMs: 24 * 60 * 60 * 1_000,
         mealAts: [Date.parse("2026-07-08T17:00:00Z")],
         toWalkAt: Date.parse("2026-07-09T08:30:00Z"),
+        toKinds: ["pee", "poop"],
       },
       {
         fromWalkAt: Date.parse("2026-07-09T08:30:00Z"),
@@ -311,9 +312,11 @@ describe("InsightsPage", () => {
       within(potty).getByRole("row", { name: /02:00 1 2 1/ }),
     ).toBeInTheDocument();
 
-    const walks = screen.getByRole("region", { name: "Walk rhythm" });
-    expect(walks).toHaveTextContent("Meal marker:");
-    expect(walks).toHaveTextContent("No meal between walks");
+    const outings = screen.getByRole("region", { name: "Outing rhythm" });
+    expect(outings).toHaveTextContent("outside pee + poop");
+    expect(outings).toHaveTextContent("until walk");
+    expect(outings).toHaveTextContent("Meal marker:");
+    expect(outings).toHaveTextContent("No meal between outings");
 
     const sleep = screen.getByRole("region", { name: "Sleep ledger" });
     const sleepRows = within(sleep).getAllByRole("listitem");
@@ -425,7 +428,7 @@ describe("InsightsPage", () => {
       },
     ];
     convex.potty = [{ hour: 2, peeInside: 1, peeOutside: 2, poop: 1 }];
-    convex.walks = [];
+    convex.outings = [];
     convex.sleep = [{ date: "2026-07-08", sleepMs: 7.5 * 60 * 60 * 1_000 }];
     convex.ratings = [{ date: "2026-07-08", rating: 4 }];
 
