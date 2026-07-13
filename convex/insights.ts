@@ -191,12 +191,16 @@ export const walkIntervals = dogQuery({
 });
 
 export const sleepByDay = dogQuery({
-  args: { days: v.array(insightDay) },
+  args: { days: v.array(insightDay), now: v.optional(v.number()) },
   returns: v.array(sleepTotal),
-  handler: async (ctx, { dogId, days }) => {
+  handler: async (ctx, { dogId, days, now }) => {
     validateDays(days);
     const startAt = days[0].startAt;
-    const endAt = days.at(-1)!.endAt;
+    const currentAt = now ?? Date.now();
+    if (!Number.isFinite(currentAt) || currentAt < startAt) {
+      throw new ConvexError("INVALID_SLEEP_NOW");
+    }
+    const endAt = Math.min(currentAt, days.at(-1)!.endAt);
     const [wakeSeed, sleepSeed, wakes, sleeps] = await Promise.all([
       ctx.db
         .query("events")
@@ -228,7 +232,7 @@ export const sleepByDay = dogQuery({
       ...wakes.map(({ at }) => ({ kind: "wake", at }) as const),
       ...sleeps.map(({ at }) => ({ kind: "sleep", at }) as const),
     ];
-    return sumSleepByDay(events, days, seed);
+    return sumSleepByDay(events, days, seed, currentAt);
   },
 });
 

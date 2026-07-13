@@ -57,6 +57,7 @@ const setup = async () => {
 const eventArgs = { startAt: 0, endAt: day };
 const sleepArgs = {
   days: [{ date: "2026-07-10", startAt: 0, endAt: day }],
+  now: day,
 };
 const ratingArgs = { startDate: "2026-01-01", endDate: "2026-01-31" };
 
@@ -279,6 +280,7 @@ describe("insight aggregations", () => {
     await expect(
       owner.query(insights.sleepByDay, {
         dogId,
+        now: 2_800,
         days: [
           { date: "2026-07-09", startAt: 1_000, endAt: 2_000 },
           { date: "2026-07-10", startAt: 2_000, endAt: 3_000 },
@@ -286,7 +288,7 @@ describe("insight aggregations", () => {
       }),
     ).resolves.toEqual([
       { date: "2026-07-09", sleepMs: 700 },
-      { date: "2026-07-10", sleepMs: 800 },
+      { date: "2026-07-10", sleepMs: 600 },
     ]);
   });
 
@@ -311,9 +313,13 @@ describe("insight aggregations", () => {
       })),
     ]) {
       await expect(
-        owner.query(insights.sleepByDay, { dogId, days }),
+        owner.query(insights.sleepByDay, { dogId, days, now: day }),
       ).rejects.toThrow("INVALID_SLEEP_DAYS");
     }
+
+    await expect(
+      owner.query(insights.sleepByDay, { dogId, ...sleepArgs, now: -1 }),
+    ).rejects.toThrow("INVALID_SLEEP_NOW");
   });
 
   it("returns only rated days in date order and validates the range", async () => {
