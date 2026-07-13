@@ -308,11 +308,27 @@ describe("DashboardPage quick logging", () => {
 
   it("logs quick activities at a selected earlier time", async () => {
     vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-07-09T12:00:00Z"));
+    HTMLDialogElement.prototype.showModal = function () {
+      this.open = true;
+    };
+    HTMLDialogElement.prototype.close = function () {
+      this.open = false;
+      this.dispatchEvent(new Event("close"));
+    };
     render(<DashboardPage dog={dog} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Earlier" }));
-    fireEvent.click(screen.getByRole("button", { name: "30 min ago" }));
+    expect(
+      screen.queryByRole("button", { name: "30 min ago" }),
+    ).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Log Meal" }));
+    const dialog = screen.getByRole("dialog", {
+      name: "When did it happen?",
+    });
+    const submit = within(dialog).getByRole("button", { name: "Log Meal" });
+    expect(submit).toBeDisabled();
+    fireEvent.click(within(dialog).getByRole("button", { name: "30 min ago" }));
+    fireEvent.click(submit);
 
     await waitFor(() =>
       expect(convex.log).toHaveBeenCalledWith({
@@ -321,7 +337,38 @@ describe("DashboardPage quick logging", () => {
         kind: "meal",
       }),
     );
-    expect(screen.getByText("Activity time · 11:30 AM")).toBeVisible();
+    expect(dialog).not.toHaveAttribute("open");
+  });
+
+  it("logs an earlier activity at an exact dog-local time", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-07-09T12:00:00Z"));
+    HTMLDialogElement.prototype.showModal = function () {
+      this.open = true;
+    };
+    HTMLDialogElement.prototype.close = function () {
+      this.open = false;
+      this.dispatchEvent(new Event("close"));
+    };
+    render(<DashboardPage dog={{ ...dog, timezone: "Asia/Tokyo" }} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Earlier" }));
+    fireEvent.click(screen.getByRole("button", { name: "Log Treat" }));
+    const dialog = screen.getByRole("dialog", {
+      name: "When did it happen?",
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Exact time" }));
+    fireEvent.change(within(dialog).getByLabelText("Exact date and time"), {
+      target: { value: "2026-07-09T18:20" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Log Treat" }));
+
+    await waitFor(() =>
+      expect(convex.log).toHaveBeenCalledWith({
+        at: Date.parse("2026-07-09T09:20:00Z"),
+        dogId,
+        kind: "treat",
+      }),
+    );
   });
 
   it("uses the selected earlier time for training logs", async () => {
@@ -339,6 +386,7 @@ describe("DashboardPage quick logging", () => {
     fireEvent.click(screen.getByRole("button", { name: "Earlier" }));
     fireEvent.click(screen.getByRole("button", { name: "Log training" }));
     const dialog = screen.getByRole("dialog", { name: "Log training" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "15 min ago" }));
     fireEvent.click(within(dialog).getByRole("checkbox", { name: "Sit" }));
     fireEvent.click(within(dialog).getByRole("radio", { name: "Neutral" }));
     fireEvent.click(

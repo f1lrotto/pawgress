@@ -77,6 +77,7 @@ type EditState = {
 };
 type WalkTimeState = { at: string; error: string; isOpen: boolean };
 type DiaryState = { error: string; isOpen: boolean; note: string };
+type EarlierAction = { kind: QuickKind; label: string; peePlace?: PeePlace };
 type RecentState = {
   confirmDeleteId: Id<"events"> | null;
   editId: Id<"events"> | null;
@@ -1377,6 +1378,107 @@ function BackdateForm({
   );
 }
 
+function EarlierTimePicker({
+  dog,
+  onChange,
+}: {
+  dog: DashboardDog;
+  onChange: (at: number | null) => void;
+}) {
+  const { t } = useTranslation("dashboard");
+  const [selectedPreset, setSelectedPreset] = useState<number | null>(null);
+  const [customAt, setCustomAt] = useState("");
+  const [isCustomTimeOpen, setIsCustomTimeOpen] = useState(false);
+  const [error, setError] = useState("");
+
+  const selectPreset = (minutes: number) => {
+    setSelectedPreset(minutes);
+    setCustomAt("");
+    setIsCustomTimeOpen(false);
+    setError("");
+    onChange(getCurrentTime() - minutes * 60_000);
+  };
+  const showCustomTime = () => {
+    setSelectedPreset(null);
+    setIsCustomTimeOpen(true);
+    setError("");
+    onChange(null);
+  };
+  const selectCustomTime = (value: string) => {
+    const at = parseZonedDateTimeLocal(value, dog.timezone);
+    const nextError = getTimestampError(value, at, dog, getCurrentTime(), t);
+    setCustomAt(value);
+    setError(nextError);
+    onChange(nextError ? null : at);
+  };
+
+  return (
+    <fieldset className="mt-5">
+      <legend className="text-sm font-bold">{t("quick.howLongAgo")}</legend>
+      <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {quickTimePresets.map((minutes) => (
+          <Button
+            key={minutes}
+            type="button"
+            variant="secondary"
+            aria-pressed={selectedPreset === minutes}
+            className="px-3 text-sm aria-pressed:border-primary aria-pressed:bg-secondary"
+            onClick={() => selectPreset(minutes)}
+          >
+            {t("quick.minutesAgo", { count: minutes })}
+          </Button>
+        ))}
+        <Button
+          type="button"
+          variant="secondary"
+          aria-expanded={isCustomTimeOpen}
+          aria-controls="earlier-custom-time"
+          aria-pressed={isCustomTimeOpen}
+          className="px-3 text-sm aria-pressed:border-primary aria-pressed:bg-secondary"
+          onClick={showCustomTime}
+        >
+          {t("quick.chooseTime")}
+        </Button>
+      </div>
+
+      {isCustomTimeOpen && (
+        <div id="earlier-custom-time" className="mt-4">
+          <label htmlFor="earlier-custom-at" className="text-sm font-bold">
+            {t("quick.exactTime")}
+          </label>
+          <input
+            id="earlier-custom-at"
+            type="datetime-local"
+            step="60"
+            value={customAt}
+            aria-invalid={Boolean(error)}
+            aria-describedby={
+              error ? "earlier-timezone earlier-time-error" : "earlier-timezone"
+            }
+            className="field-control mt-2 w-full"
+            onChange={(event) => selectCustomTime(event.target.value)}
+          />
+          <p
+            id="earlier-timezone"
+            className="mt-2 text-xs text-muted-foreground"
+          >
+            {t("common.timezone", { timezone: dog.timezone })}
+          </p>
+          {error && (
+            <p
+              id="earlier-time-error"
+              role="alert"
+              className="mt-2 text-sm text-destructive"
+            >
+              {error}
+            </p>
+          )}
+        </div>
+      )}
+    </fieldset>
+  );
+}
+
 function QuickLogSection({
   activeWalk,
   dog,
@@ -1428,34 +1530,38 @@ function QuickLogSection({
   trainingCommands: TrainingCommands | undefined;
 }) {
   const { t } = useTranslation("dashboard");
-  const [logAt, setLogAt] = useState<number | null>(null);
-  const [selectedPreset, setSelectedPreset] = useState<number | null>(null);
-  const [customAt, setCustomAt] = useState("");
-  const [isCustomTimeOpen, setIsCustomTimeOpen] = useState(false);
-  const [timeError, setTimeError] = useState("");
-  const isBusy = pendingOperation !== null || Boolean(timeError);
+  const earlierDialogRef = useRef<HTMLDialogElement>(null);
+  const [isEarlier, setIsEarlier] = useState(false);
+  const [earlierAction, setEarlierAction] = useState<EarlierAction | null>(
+    null,
+  );
+  const [earlierAt, setEarlierAt] = useState<number | null>(null);
+  const isBusy = pendingOperation !== null;
   const activeWalkKey = activeWalk?._id ?? "no-active-walk";
-  const selectNow = () => {
-    setLogAt(null);
-    setSelectedPreset(null);
-    setCustomAt("");
-    setIsCustomTimeOpen(false);
-    setTimeError("");
+  const log = (action: EarlierAction) => {
+    if (!isEarlier) {
+      onLog(action.kind, action.label, getCurrentTime(), action.peePlace);
+      return;
+    }
+    setEarlierAction(action);
+    setEarlierAt(null);
+    earlierDialogRef.current?.showModal();
   };
-  const selectEarlier = (minutes = 15) => {
-    const at = Date.now() - minutes * 60_000;
-    setLogAt(at);
-    setSelectedPreset(minutes);
-    setCustomAt(formatZonedDateTimeLocal(at, dog.timezone) ?? "");
-    setTimeError("");
+  const closeEarlierDialog = () => earlierDialogRef.current?.close();
+  const resetEarlierDialog = () => {
+    setEarlierAction(null);
+    setEarlierAt(null);
   };
-  const selectCustomTime = (value: string) => {
-    const at = parseZonedDateTimeLocal(value, dog.timezone);
-    const nextError = getTimestampError(value, at, dog, Date.now(), t);
-    setCustomAt(value);
-    setSelectedPreset(null);
-    setTimeError(nextError);
-    if (!nextError && at !== null) setLogAt(at);
+  const submitEarlier = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (earlierAction === null || earlierAt === null) return;
+    onLog(
+      earlierAction.kind,
+      earlierAction.label,
+      earlierAt,
+      earlierAction.peePlace,
+    );
+    closeEarlierDialog();
   };
   return (
     <section aria-labelledby="quick-log-title" className="min-w-0">
@@ -1474,90 +1580,26 @@ function QuickLogSection({
         <div className="mt-2 grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-input bg-input sm:max-w-md">
           <Button
             type="button"
-            variant={logAt === null ? "primary" : "secondary"}
-            aria-pressed={logAt === null}
+            variant={!isEarlier ? "primary" : "secondary"}
+            aria-pressed={!isEarlier}
             className="rounded-none border-0 px-3 text-sm"
-            onClick={selectNow}
+            onClick={() => setIsEarlier(false)}
           >
             {t("quick.now")}
           </Button>
           <Button
             type="button"
-            variant={logAt !== null ? "primary" : "secondary"}
-            aria-pressed={logAt !== null}
+            variant={isEarlier ? "primary" : "secondary"}
+            aria-pressed={isEarlier}
             className="rounded-none border-0 px-3 text-sm"
-            onClick={() => selectEarlier()}
+            onClick={() => setIsEarlier(true)}
           >
             {t("quick.earlier")}
           </Button>
         </div>
-
-        {logAt === null ? (
-          <p className="mt-2 text-sm text-muted-foreground">
-            {t("quick.currentTime")}
-          </p>
-        ) : (
-          <div className="mt-3">
-            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
-              {quickTimePresets.map((minutes) => (
-                <Button
-                  key={minutes}
-                  type="button"
-                  variant="secondary"
-                  aria-pressed={selectedPreset === minutes}
-                  className="px-3 text-sm aria-pressed:border-primary aria-pressed:bg-secondary"
-                  onClick={() => selectEarlier(minutes)}
-                >
-                  {t("quick.minutesAgo", { count: minutes })}
-                </Button>
-              ))}
-              <Button
-                type="button"
-                variant="secondary"
-                aria-expanded={isCustomTimeOpen}
-                aria-controls="quick-custom-time"
-                className="px-3 text-sm"
-                onClick={() => setIsCustomTimeOpen((open) => !open)}
-              >
-                {t("quick.chooseTime")}
-              </Button>
-            </div>
-
-            {isCustomTimeOpen && (
-              <div id="quick-custom-time" className="mt-4">
-                <label htmlFor="quick-custom-at" className="text-sm font-bold">
-                  {t("quick.exactTime")}
-                </label>
-                <input
-                  id="quick-custom-at"
-                  type="datetime-local"
-                  step="60"
-                  value={customAt}
-                  aria-invalid={Boolean(timeError)}
-                  aria-describedby={timeError ? "quick-time-error" : undefined}
-                  className="field-control mt-2 w-full sm:max-w-sm"
-                  onChange={(event) => selectCustomTime(event.target.value)}
-                />
-                {timeError && (
-                  <p
-                    id="quick-time-error"
-                    role="alert"
-                    className="mt-2 text-sm text-destructive"
-                  >
-                    {timeError}
-                  </p>
-                )}
-              </div>
-            )}
-
-            <p
-              className="mt-3 text-sm text-muted-foreground"
-              aria-live="polite"
-            >
-              {t("quick.selectedTime", { time: timeFormatter.format(logAt) })}
-            </p>
-          </div>
-        )}
+        <p className="mt-2 text-sm text-muted-foreground">
+          {isEarlier ? t("quick.earlierHelp") : t("quick.currentTime")}
+        </p>
       </fieldset>
 
       <div
@@ -1620,9 +1662,7 @@ function QuickLogSection({
                       aria-busy={pendingOperation === "pee"}
                       aria-describedby="quick-state-pee"
                       className="min-h-11 bg-muted px-2 text-xs font-semibold transition-colors hover:bg-accent focus-visible:z-10 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-60"
-                      onClick={() =>
-                        onLog(kind, label, logAt ?? Date.now(), place)
-                      }
+                      onClick={() => log({ kind, label, peePlace: place })}
                     >
                       {t(`peePlace.${place}`)}
                       <span className="sr-only">
@@ -1656,7 +1696,7 @@ function QuickLogSection({
               aria-describedby={`quick-state-${kind}`}
               aria-busy={pendingOperation === kind}
               className="min-h-24 bg-card px-3 py-3 text-left transition-colors duration-150 hover:bg-accent active:bg-muted focus-visible:z-10 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:bg-muted disabled:opacity-60 aria-busy:cursor-wait sm:px-4"
-              onClick={() => onLog(kind, label, logAt ?? Date.now())}
+              onClick={() => log({ kind, label })}
             >
               <span className="flex items-center gap-2.5">
                 <span
@@ -1683,12 +1723,43 @@ function QuickLogSection({
           );
         })}
         <TrainingQuickLog
-          at={logAt}
           commands={trainingCommands}
           disabled={isBusy}
           dog={dog}
+          isEarlier={isEarlier}
         />
       </div>
+
+      <dialog
+        ref={earlierDialogRef}
+        aria-labelledby="earlier-dialog-title"
+        className="m-auto w-[min(32rem,calc(100%-2rem))] rounded-xl bg-card p-0 text-foreground shadow-[var(--elevation-2)] backdrop:bg-foreground/40"
+        onClose={resetEarlierDialog}
+      >
+        {earlierAction && (
+          <form className="p-5 sm:p-6" onSubmit={submitEarlier}>
+            <h3 id="earlier-dialog-title" className="text-xl font-bold">
+              {t("quick.earlierTitle", { event: earlierAction.label })}
+            </h3>
+            <p className="mt-2 text-sm text-muted-foreground">
+              {t("quick.earlierDescription", { event: earlierAction.label })}
+            </p>
+            <EarlierTimePicker dog={dog} onChange={setEarlierAt} />
+            <div className="mt-6 grid grid-cols-2 gap-3">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={closeEarlierDialog}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button type="submit" disabled={earlierAt === null}>
+                {t("quick.logEarlier", { event: earlierAction.label })}
+              </Button>
+            </div>
+          </form>
+        )}
+      </dialog>
 
       <WalkControls
         key={`walk-controls-${activeWalkKey}`}
@@ -1745,15 +1816,15 @@ function QuickLogSection({
 }
 
 function TrainingQuickLog({
-  at,
   commands,
   disabled,
   dog,
+  isEarlier,
 }: {
-  at: number | null;
   commands: TrainingCommands | undefined;
   disabled: boolean;
   dog: DashboardDog;
+  isEarlier: boolean;
 }) {
   const { t } = useTranslation("dashboard");
   const dialogRef = useRef<HTMLDialogElement>(null);
@@ -1761,19 +1832,25 @@ function TrainingQuickLog({
   const logSessions = useMutation(api.training.logSessions);
   const [selected, setSelected] = useState<Array<Id<"trainingCommands">>>([]);
   const [rating, setRating] = useState<number | null>(null);
+  const at = useRef<number | null>(null);
   const [error, setError] = useState("");
+  const [isOpen, setIsOpen] = useState(false);
   const [isPending, setIsPending] = useState(false);
 
   const close = () => dialogRef.current?.close();
   const reset = () => {
     setSelected([]);
     setRating(null);
+    at.current = null;
     setError("");
+    setIsOpen(false);
     setIsPending(false);
     openerRef.current?.focus();
   };
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (isEarlier && at.current === null)
+      return setError(t("quick.chooseEarlier"));
     if (selected.length === 0) return setError(t("training.selectCommand"));
     if (rating === null) return setError(t("training.selectAssessment"));
     setIsPending(true);
@@ -1782,7 +1859,7 @@ function TrainingQuickLog({
       await logSessions({
         dogId: dog._id,
         commandIds: selected,
-        at: at ?? Date.now(),
+        at: isEarlier && at.current !== null ? at.current : getCurrentTime(),
         rating,
       });
       close();
@@ -1801,7 +1878,10 @@ function TrainingQuickLog({
         aria-label={t("training.openAria")}
         aria-describedby="quick-state-training"
         className="col-span-2 min-h-24 bg-card px-3 py-3 text-left transition-colors duration-150 hover:bg-accent active:bg-muted focus-visible:z-10 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring sm:col-span-2 sm:px-4 lg:col-span-1"
-        onClick={() => dialogRef.current?.showModal()}
+        onClick={() => {
+          setIsOpen(true);
+          dialogRef.current?.showModal();
+        }}
       >
         <span className="flex items-center gap-2.5">
           <span aria-hidden="true" className="w-4 shrink-0 text-center text-sm">
@@ -1830,6 +1910,18 @@ function TrainingQuickLog({
             <legend id="training-dialog-title" className="text-xl font-bold">
               {t("training.title")}
             </legend>
+            {isEarlier &&
+              isOpen &&
+              commands !== undefined &&
+              commands.length > 0 && (
+                <EarlierTimePicker
+                  dog={dog}
+                  onChange={(selectedAt) => {
+                    at.current = selectedAt;
+                    setError("");
+                  }}
+                />
+              )}
             {commands?.length === 0 ? (
               <div className="mt-4">
                 <p className="text-sm text-muted-foreground">
