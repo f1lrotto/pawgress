@@ -153,8 +153,10 @@ describe("InsightsPage", () => {
     const sleepArgs = query("insights:sleepByDay")?.args as {
       days: Array<{ date: string; startAt: number; endAt: number }>;
       dogId: Id<"dogs">;
+      now: number;
     };
     expect(sleepArgs.dogId).toBe(dog._id);
+    expect(sleepArgs.now).toBe(Date.parse("2026-03-30T12:00:00Z"));
     expect(sleepArgs.days).toHaveLength(30);
     expect(sleepArgs.days[0].date).toBe("2026-03-01");
     expect(sleepArgs.days.at(-1)?.date).toBe("2026-03-30");
@@ -173,6 +175,9 @@ describe("InsightsPage", () => {
       startDate: "2026-06-11",
       endDate: "2026-07-10",
     });
+    expect(query("insights:sleepByDay")?.args).toMatchObject({
+      now: Date.parse("2026-07-10T23:59:45Z"),
+    });
 
     convex.queryCalls = [];
     act(() => vi.advanceTimersByTime(30_000));
@@ -180,6 +185,9 @@ describe("InsightsPage", () => {
     expect(query("insights:dayRatings")?.args).toMatchObject({
       startDate: "2026-06-12",
       endDate: "2026-07-11",
+    });
+    expect(query("insights:sleepByDay")?.args).toMatchObject({
+      now: Date.parse("2026-07-11T00:00:15Z"),
     });
   });
 

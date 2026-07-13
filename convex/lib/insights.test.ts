@@ -97,7 +97,7 @@ describe("sumSleepByDay", () => {
     { date: "2026-07-10", startAt: 2_000, endAt: 3_000 },
   ];
 
-  it("clips carry-in, crossing, and open sleep to each day", () => {
+  it("clips carry-in, crossing, and open sleep to now", () => {
     expect(
       sumSleepByDay(
         [
@@ -108,10 +108,11 @@ describe("sumSleepByDay", () => {
         ],
         days,
         { kind: "sleep", at: 500 },
+        2_800,
       ),
     ).toEqual([
       { date: "2026-07-09", sleepMs: 700 },
-      { date: "2026-07-10", sleepMs: 800 },
+      { date: "2026-07-10", sleepMs: 600 },
     ]);
   });
 
@@ -126,6 +127,7 @@ describe("sumSleepByDay", () => {
         ],
         days,
         null,
+        3_000,
       ),
     ).toEqual([
       { date: "2026-07-09", sleepMs: 400 },

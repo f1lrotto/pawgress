@@ -94,11 +94,13 @@ export const sumSleepByDay = (
   events: RestEvent[],
   days: InsightDay[],
   seed: RestEvent | null,
+  now: number,
 ) => {
   const totals = days.map(({ date }) => ({ date, sleepMs: 0 }));
   if (days.length === 0) return totals;
   const rangeStart = days[0].startAt;
-  const rangeEnd = days.at(-1)!.endAt;
+  const rangeEnd = Math.min(now, days.at(-1)!.endAt);
+  if (rangeEnd <= rangeStart) return totals;
   let asleep = seed?.kind === "sleep";
   let sleepStartedAt = asleep ? rangeStart : null;
   const addSleep = (startAt: number, endAt: number) => {

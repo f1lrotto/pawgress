@@ -94,7 +94,7 @@ function InsightsContent({ dog }: { dog: InsightsDog }) {
   const outings = useQuery(api.insights.walkIntervals, windowArgs);
   const sleep = useQuery(
     api.insights.sleepByDay,
-    validRange ? { dogId: dog._id, days } : "skip",
+    validRange ? { dogId: dog._id, days, now } : "skip",
   );
   const ratings = useQuery(
     api.insights.dayRatings,
