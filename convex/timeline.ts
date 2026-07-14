@@ -7,7 +7,6 @@ import { ConvexError, v } from "convex/values";
 import { dogQuery } from "./lib/functions";
 import { event } from "./lib/events";
 
-const maxWindowMs = 27 * 60 * 60 * 1_000;
 const maxPageSize = 50;
 const maximumRowsRead = 500;
 const eventKind = v.union(
@@ -22,24 +21,13 @@ const eventKind = v.union(
   v.literal("note"),
 );
 
-export const listDay = dogQuery({
+export const list = dogQuery({
   args: {
-    startAt: v.number(),
-    endAt: v.number(),
     kinds: v.optional(v.array(eventKind)),
     paginationOpts: paginationOptsValidator,
   },
   returns: paginationResultValidator(event),
-  handler: (ctx, { dogId, startAt, endAt, kinds, paginationOpts }) => {
-    if (
-      !Number.isFinite(startAt) ||
-      !Number.isFinite(endAt) ||
-      startAt < 0 ||
-      startAt >= endAt ||
-      endAt - startAt > maxWindowMs
-    ) {
-      throw new ConvexError("INVALID_TIMELINE_WINDOW");
-    }
+  handler: (ctx, { dogId, kinds, paginationOpts }) => {
     if (
       !Number.isInteger(paginationOpts.numItems) ||
       paginationOpts.numItems < 1 ||
@@ -58,9 +46,7 @@ export const listDay = dogQuery({
 
     const range = ctx.db
       .query("events")
-      .withIndex("by_dog_at", (q) =>
-        q.eq("dogId", dogId).gte("at", startAt).lt("at", endAt),
-      )
+      .withIndex("by_dog_at", (q) => q.eq("dogId", dogId))
       .order("desc");
     const filtered = kinds
       ? range.filter((q) =>

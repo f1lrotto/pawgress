@@ -185,6 +185,58 @@ describe("training", () => {
     ).rejects.toThrow("INVALID_TRAINING_WINDOW");
   });
 
+  it("paginates the full training history newest first", async () => {
+    const { dogId, owner, stranger } = await setup();
+    const commandId = await owner.mutation(api.training.create, {
+      dogId,
+      name: "Recall",
+    });
+    await Promise.all(
+      [0, 1, 2].map((index) =>
+        owner.mutation(api.training.logSession, {
+          dogId,
+          commandId,
+          at: firstSessionAt + index * 1_000,
+          rating: index + 1,
+        }),
+      ),
+    );
+
+    const first = await owner.query(api.training.listTimeline, {
+      dogId,
+      paginationOpts: { cursor: null, numItems: 2 },
+    });
+    expect(
+      first.page.map(({ at, commandName }) => ({ at, commandName })),
+    ).toEqual([
+      { at: firstSessionAt + 2_000, commandName: "Recall" },
+      { at: firstSessionAt + 1_000, commandName: "Recall" },
+    ]);
+    await expect(
+      owner.query(api.training.listTimeline, {
+        dogId,
+        paginationOpts: { cursor: first.continueCursor, numItems: 2 },
+      }),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        isDone: true,
+        page: [expect.objectContaining({ at: firstSessionAt })],
+      }),
+    );
+    await expect(
+      stranger.query(api.training.listTimeline, {
+        dogId,
+        paginationOpts: { cursor: null, numItems: 1 },
+      }),
+    ).rejects.toThrow("FORBIDDEN");
+    await expect(
+      owner.query(api.training.listTimeline, {
+        dogId,
+        paginationOpts: { cursor: null, numItems: 51 },
+      }),
+    ).rejects.toThrow("INVALID_LIMIT");
+  });
+
   it("validates bounds and prevents normalized active-name duplicates", async () => {
     const { owner, dogId } = await setup();
 

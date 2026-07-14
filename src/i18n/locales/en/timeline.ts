@@ -1,20 +1,19 @@
 const timeline = {
   peePlace: { inside: "Inside", outside: "Outside" },
   amount: "Amount: {{amount}}",
-  boundary: "Day boundary: {{timezone}}",
+  boundary: "Days follow {{timezone}}.",
   clearFilters: "Clear filters",
   duration: "Duration: {{duration}}",
   edit: "Edit",
   editAria: "Edit {{event}} at {{time}}",
-  empty: "No entries on this day.",
+  empty: "No entries yet.",
   emptyAction: "Log an activity",
-  end: "End of this day’s notes.",
+  end: "You’ve reached the first entry.",
   filter: "Filter events",
   filteredEmpty: "No entries match these filters.",
   intro:
-    "Read {{name}}’s meals, rest, walks, training, play, and garden notes on one quiet page.",
-  invalid:
-    "We couldn't read this timeline day. Check the date and {{name}}’s timezone.",
+    "Scroll through {{name}}’s meals, rest, walks, training, play, and garden notes in one continuous history.",
+  invalid: "We couldn't read this timeline. Check {{name}}’s timezone.",
   kinds: {
     meal: "Meal",
     note: "Note",
@@ -29,7 +28,7 @@ const timeline = {
   },
   linkedWalk: "Linked walk {{id}}",
   loadMore: "Load older entries",
-  loading: "Opening this day’s field notes…",
+  loading: "Opening the timeline…",
   loadingMore: "Loading older entries",
   openTrainingOne: "View command",
   openTrainingMany: "View training",
@@ -41,7 +40,6 @@ const timeline = {
   duringWalk: "During walk",
   title: "Day by day.",
   timeline: "Timeline",
-  timelineDate: "Timeline date",
   updated: "{{event}} updated.",
 } as const;
 

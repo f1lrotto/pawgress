@@ -4,20 +4,20 @@ import type timelineEn from "../en/timeline";
 const timeline = {
   peePlace: { inside: "Dnu", outside: "Vonku" },
   amount: "Množstvo: {{amount}}",
-  boundary: "Hranica dňa: {{timezone}}",
+  boundary: "Dni sa riadia časovým pásmom {{timezone}}.",
   clearFilters: "Zrušiť filtre",
   duration: "Trvanie: {{duration}}",
   edit: "Upraviť",
   editAria: "Upraviť {{event}} o {{time}}",
-  empty: "V tento deň tu nie sú žiadne záznamy.",
+  empty: "Zatiaľ tu nie sú žiadne záznamy.",
   emptyAction: "Zaznamenať aktivitu",
-  end: "Koniec záznamov z tohto dňa.",
+  end: "Dostali ste sa k prvému záznamu.",
   filter: "Filtrovať udalosti",
   filteredEmpty: "Žiadne záznamy nezodpovedajú týmto filtrom.",
   intro:
-    "Jedlá, odpočinok, prechádzky, tréningy, hry a poznámky pre {{name}} nájdete prehľadne na jednej stránke.",
+    "Jedlá, odpočinok, prechádzky, tréningy, hry a poznámky pre {{name}} nájdete v jednej súvislej histórii.",
   invalid:
-    "Tento deň časovej osi sa nepodarilo načítať. Skontrolujte dátum a časové pásmo pre {{name}}.",
+    "Časovú os sa nepodarilo načítať. Skontrolujte časové pásmo pre {{name}}.",
   kinds: {
     meal: "Jedlo",
     note: "Poznámka",
@@ -32,7 +32,7 @@ const timeline = {
   },
   linkedWalk: "Prepojená prechádzka {{id}}",
   loadMore: "Načítať staršie záznamy",
-  loading: "Otvárajú sa záznamy z tohto dňa…",
+  loading: "Otvára sa časová os…",
   loadingMore: "Načítavajú sa staršie záznamy",
   openTrainingOne: "Zobraziť povel",
   openTrainingMany: "Zobraziť tréning",
@@ -44,7 +44,6 @@ const timeline = {
   duringWalk: "Počas prechádzky",
   title: "Deň za dňom.",
   timeline: "Časová os",
-  timelineDate: "Dátum časovej osi",
   updated: "{{event}} bolo upravené.",
 } as const satisfies CatalogShape<typeof timelineEn>;
 

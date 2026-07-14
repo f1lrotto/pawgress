@@ -1,6 +1,6 @@
 import { usePaginatedQuery, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 
@@ -13,18 +13,16 @@ import type { Locale } from "@/i18n/locale";
 import { formatElapsed, getElapsedMs } from "@/lib/timers";
 import { toTrainingRating, trainingRatings } from "@/lib/trainingRating";
 import { EventEditor } from "@/pages/DashboardPage";
-import {
-  formatZonedDateTimeLocal,
-  getZonedDayKeys,
-  getZonedDayWindow,
-} from "@/lib/zonedDateTime";
+import { formatZonedDateTimeLocal, getZonedDayKeys } from "@/lib/zonedDateTime";
 
 type TimelineDog = Pick<Doc<"dogs">, "_id" | "birthday" | "name" | "timezone">;
 type TimelineEvent = FunctionReturnType<
-  typeof api.timeline.listDay
+  typeof api.timeline.list
 >["page"][number];
 type EventKind = TimelineEvent["kind"];
-type TrainingDay = FunctionReturnType<typeof api.training.listDay>;
+type TrainingSession = FunctionReturnType<
+  typeof api.training.listTimeline
+>["page"][number];
 type TimelineKind = EventKind | "training";
 type TrainingGroup = {
   at: number;
@@ -36,6 +34,14 @@ type TrainingGroup = {
   }>;
   id: Id<"trainingSessions">;
   notes?: string;
+};
+type TimelineItem =
+  | { at: number; event: TimelineEvent; type: "event" }
+  | { at: number; training: TrainingGroup; type: "training" };
+type TimelineDay = {
+  date: string;
+  items: TimelineItem[];
+  label: string;
 };
 type ActivityTypes = FunctionReturnType<typeof api.activityTypes.list>;
 type ActivityTypesById = ReadonlyMap<
@@ -55,6 +61,7 @@ const filterOptions = [
   "note",
   "training",
 ] as const satisfies ReadonlyArray<TimelineKind>;
+const pageSize = 30;
 const skeletonRows = [0, 1, 2] as const;
 
 const eventTime = (at: number, timezone: string) =>
@@ -73,7 +80,7 @@ const eventLabel = (
     : kindLabel("play");
 };
 
-const groupTrainingSessions = (sessions: TrainingDay) =>
+const groupTrainingSessions = (sessions: TrainingSession[]) =>
   Array.from(
     sessions.reduce((groups, session) => {
       const key = `${session.at}:${session.notes ?? ""}`;
@@ -152,9 +159,9 @@ function TimelineRow({
         ) : (
           <>
             <div className="flex flex-wrap items-center gap-2">
-              <h3 className="break-words text-base font-semibold leading-6 [overflow-wrap:anywhere]">
+              <h4 className="break-words text-base font-semibold leading-6 [overflow-wrap:anywhere]">
                 {label}
-              </h3>
+              </h4>
               {event.kind === "pee" && event.peePlace && (
                 <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-semibold text-muted-foreground">
                   {t(`peePlace.${event.peePlace}`)}
@@ -222,9 +229,9 @@ function TrainingTimelineRow({
       </time>
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
-          <h3 className="text-base font-semibold leading-6">
+          <h4 className="text-base font-semibold leading-6">
             {t("kinds.training")}
-          </h3>
+          </h4>
         </div>
         <div className="mt-2 grid gap-2">
           {training.commands.map((command) => {
@@ -269,56 +276,38 @@ function TrainingTimelineRow({
 function TimelinePage({ dog }: { dog: TimelineDog }) {
   const { i18n, t } = useTranslation("timeline");
   const locale = i18n.resolvedLanguage as Locale;
-  const initialDate = () =>
-    getZonedDayKeys(Date.now(), dog.timezone)?.today ?? "";
-  const [date, setDate] = useState(initialDate);
-  const [dateDirty, setDateDirty] = useState(false);
   const [kinds, setKinds] = useState<TimelineKind[]>([]);
   const [editId, setEditId] = useState<Id<"events"> | null>(null);
   const [status, setStatus] = useState("");
-
-  useEffect(() => {
-    if (dateDirty) return;
-    const syncDate = () => {
-      const today = getZonedDayKeys(Date.now(), dog.timezone)?.today;
-      setDate(today ?? "");
-    };
-    syncDate();
-    const interval = window.setInterval(syncDate, 30_000);
-    return () => window.clearInterval(interval);
-  }, [dateDirty, dog.timezone]);
-
-  const dayWindow = getZonedDayWindow(date, dog.timezone);
+  const loaderRef = useRef<HTMLDivElement>(null);
+  const hasValidTimezone = Boolean(getZonedDayKeys(0, dog.timezone));
+  const selectedKinds = useMemo(() => new Set(kinds), [kinds]);
   const eventKinds = kinds.filter(
     (kind): kind is EventKind => kind !== "training",
   );
-  const timeline = usePaginatedQuery(
-    api.timeline.listDay,
-    dayWindow
+  const showEvents = kinds.length === 0 || eventKinds.length > 0;
+  const showTraining = kinds.length === 0 || selectedKinds.has("training");
+  const events = usePaginatedQuery(
+    api.timeline.list,
+    hasValidTimezone && showEvents
       ? {
           dogId: dog._id,
-          startAt: dayWindow.startAt,
-          endAt: dayWindow.endAt,
           ...(eventKinds.length ? { kinds: eventKinds } : {}),
         }
       : "skip",
-    { initialNumItems: 30 },
+    { initialNumItems: pageSize },
   );
-  const trainingDay = useQuery(
-    api.training.listDay,
-    dayWindow
-      ? {
-          dogId: dog._id,
-          startAt: dayWindow.startAt,
-          endAt: dayWindow.endAt,
-        }
+  const training = usePaginatedQuery(
+    api.training.listTimeline,
+    hasValidTimezone && showTraining ? { dogId: dog._id } : "skip",
+    { initialNumItems: pageSize },
+  );
+  const activityTypes = useQuery(
+    api.activityTypes.list,
+    hasValidTimezone
+      ? { dogId: dog._id, includeArchived: true, limit: 100 }
       : "skip",
   );
-  const activityTypes = useQuery(api.activityTypes.list, {
-    dogId: dog._id,
-    includeArchived: true,
-    limit: 100,
-  });
   const activityTypesById = useMemo(
     () =>
       new Map(
@@ -326,69 +315,117 @@ function TimelinePage({ dog }: { dog: TimelineDog }) {
       ),
     [activityTypes],
   );
-  const selectedKinds = useMemo(() => new Set(kinds), [kinds]);
   const toggleKind = (kind: TimelineKind) =>
     setKinds((selected) =>
       selected.includes(kind)
         ? selected.filter((value) => value !== kind)
         : [...selected, kind],
     );
-  const timelineItems = useMemo(
+  const coverageFloor = Math.max(
+    showEvents && events.status !== "Exhausted"
+      ? (events.results.at(-1)?.at ?? Number.POSITIVE_INFINITY)
+      : Number.NEGATIVE_INFINITY,
+    showTraining && training.status !== "Exhausted"
+      ? (training.results.at(-1)?.at ?? Number.POSITIVE_INFINITY)
+      : Number.NEGATIVE_INFINITY,
+  );
+  const timelineItems = useMemo<TimelineItem[]>(
     () =>
       [
-        ...timeline.results.flatMap((event) =>
+        ...events.results.flatMap((event) =>
           selectedKinds.size === 0 || selectedKinds.has(event.kind)
             ? [{ at: event.at, event, type: "event" as const }]
             : [],
         ),
         ...(selectedKinds.size === 0 || selectedKinds.has("training")
-          ? groupTrainingSessions(trainingDay ?? []).map((training) => ({
-              at: training.at,
-              training,
+          ? groupTrainingSessions(training.results).map((group) => ({
+              at: group.at,
+              training: group,
               type: "training" as const,
             }))
           : []),
-      ].sort((left, right) => right.at - left.at),
-    [selectedKinds, timeline.results, trainingDay],
+      ]
+        .filter(({ at }) => at > coverageFloor)
+        .sort((left, right) => right.at - left.at),
+    [coverageFloor, events.results, selectedKinds, training.results],
   );
+  const timelineDays = useMemo(() => {
+    const days = new Map<string, TimelineDay>();
+    for (const item of timelineItems) {
+      const date = formatZonedDateTimeLocal(item.at, dog.timezone)?.slice(
+        0,
+        10,
+      );
+      if (!date) continue;
+      const day = days.get(date);
+      if (day) {
+        day.items.push(item);
+      } else {
+        days.set(date, {
+          date,
+          items: [item],
+          label: formatDate(item.at, locale, dog.timezone, {
+            day: "numeric",
+            month: "long",
+            weekday: "long",
+            year: "numeric",
+          }),
+        });
+      }
+    }
+    return [...days.values()];
+  }, [dog.timezone, locale, timelineItems]);
   const isLoading =
-    Boolean(dayWindow) &&
-    (timeline.status === "LoadingFirstPage" || trainingDay === undefined);
+    hasValidTimezone &&
+    ((showEvents && events.status === "LoadingFirstPage") ||
+      (showTraining && training.status === "LoadingFirstPage"));
+  const isLoadingMore =
+    (showEvents && events.status === "LoadingMore") ||
+    (showTraining && training.status === "LoadingMore");
+  const canLoadMore =
+    !isLoadingMore &&
+    ((showEvents && events.status === "CanLoadMore") ||
+      (showTraining && training.status === "CanLoadMore"));
+  const isExhausted =
+    (!showEvents || events.status === "Exhausted") &&
+    (!showTraining || training.status === "Exhausted");
+  const loadOlder = useCallback(() => {
+    if (showEvents && events.status === "CanLoadMore") {
+      events.loadMore(pageSize);
+    }
+    if (showTraining && training.status === "CanLoadMore") {
+      training.loadMore(pageSize);
+    }
+  }, [events, showEvents, showTraining, training]);
+
+  useEffect(() => {
+    const target = loaderRef.current;
+    if (!target || !canLoadMore || typeof IntersectionObserver === "undefined")
+      return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry?.isIntersecting) return;
+        observer.disconnect();
+        loadOlder();
+      },
+      { rootMargin: "480px 0px" },
+    );
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [canLoadMore, loadOlder]);
 
   return (
     <AppFrame dogName={dog.name}>
-      <section className="grid min-w-0 gap-6 py-6 sm:py-8 lg:grid-cols-[minmax(0,1fr)_minmax(16rem,24rem)] lg:items-end">
-        <div className="min-w-0">
-          <h1 className="text-balance text-[1.75rem] font-bold leading-[2.125rem]">
-            {t("title")}
-          </h1>
-          <p className="mt-3 max-w-[70ch] text-pretty break-words text-base leading-6 text-muted-foreground [overflow-wrap:anywhere]">
-            {t("intro", { name: dog.name })}
-          </p>
-        </div>
-
-        <div className="min-w-0">
-          <label
-            htmlFor="timeline-date"
-            className="text-sm font-semibold text-foreground"
-          >
-            {t("timelineDate")}
-          </label>
-          <input
-            id="timeline-date"
-            type="date"
-            min={dog.birthday}
-            value={date}
-            className="field-control mt-2 w-full"
-            onChange={(event) => {
-              setDate(event.target.value);
-              setDateDirty(true);
-            }}
-          />
-          <p className="mt-2 break-words text-sm leading-5 text-muted-foreground [overflow-wrap:anywhere]">
-            {t("boundary", { timezone: dog.timezone })}
-          </p>
-        </div>
+      <section className="min-w-0 py-6 sm:py-8">
+        <h1 className="text-balance text-[1.75rem] font-bold leading-[2.125rem]">
+          {t("title")}
+        </h1>
+        <p className="mt-3 max-w-[70ch] text-pretty break-words text-base leading-6 text-muted-foreground [overflow-wrap:anywhere]">
+          {t("intro", { name: dog.name })}
+        </p>
+        <p className="mt-2 break-words text-sm leading-5 text-muted-foreground [overflow-wrap:anywhere]">
+          {t("boundary", { timezone: dog.timezone })}
+        </p>
       </section>
 
       <fieldset className="border-y border-border bg-secondary/60 py-4">
@@ -424,18 +461,14 @@ function TimelinePage({ dog }: { dog: TimelineDog }) {
 
       <section
         aria-labelledby="timeline-ledger-title"
-        aria-busy={
-          Boolean(dayWindow) && (isLoading || timeline.status === "LoadingMore")
-        }
-        className="mt-6 overflow-hidden rounded-xl border border-border bg-card px-5 py-6 sm:px-7"
+        aria-busy={isLoading || isLoadingMore}
+        className="mt-6 rounded-xl border border-border bg-card px-5 py-6 sm:px-7"
       >
         <h2
           id="timeline-ledger-title"
           className="border-b border-border pb-4 text-xl font-semibold leading-7"
         >
-          {dayWindow
-            ? formatDate(dayWindow.startAt, locale, dog.timezone)
-            : t("timeline")}
+          {t("timeline")}
         </h2>
 
         {status && (
@@ -444,7 +477,7 @@ function TimelinePage({ dog }: { dog: TimelineDog }) {
           </p>
         )}
 
-        {!dayWindow ? (
+        {!hasValidTimezone ? (
           <p
             role="alert"
             className="mt-5 rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm leading-6 text-destructive"
@@ -470,37 +503,48 @@ function TimelinePage({ dog }: { dog: TimelineDog }) {
           </div>
         ) : (
           <>
-            {timelineItems.length > 0 && (
-              <ol className="divide-y-0">
-                {timelineItems.map((item) =>
-                  item.type === "training" ? (
-                    <TrainingTimelineRow
-                      key={`training-${item.training.id}`}
-                      dog={dog}
-                      training={item.training}
-                    />
-                  ) : (
-                    <TimelineRow
-                      key={item.event._id}
-                      activityTypesById={activityTypesById}
-                      dog={dog}
-                      event={item.event}
-                      isEditing={editId === item.event._id}
-                      onCancelEdit={() => setEditId(null)}
-                      onEdit={() => {
-                        setEditId(item.event._id);
-                        setStatus("");
-                      }}
-                      onSaved={(label) => {
-                        setEditId(null);
-                        setStatus(t("updated", { event: label }));
-                      }}
-                    />
-                  ),
-                )}
-              </ol>
-            )}
-            {timeline.status === "Exhausted" ? (
+            {timelineDays.map((day) => (
+              <section
+                key={day.date}
+                aria-labelledby={`timeline-day-${day.date}`}
+              >
+                <h3
+                  id={`timeline-day-${day.date}`}
+                  className="sticky top-0 z-[var(--z-sticky)] -mx-5 border-b border-border bg-secondary px-5 py-3 text-base font-semibold leading-6 sm:-mx-7 sm:px-7"
+                >
+                  <time dateTime={day.date}>{day.label}</time>
+                </h3>
+                <ol>
+                  {day.items.map((item) =>
+                    item.type === "training" ? (
+                      <TrainingTimelineRow
+                        key={`training-${item.training.id}`}
+                        dog={dog}
+                        training={item.training}
+                      />
+                    ) : (
+                      <TimelineRow
+                        key={item.event._id}
+                        activityTypesById={activityTypesById}
+                        dog={dog}
+                        event={item.event}
+                        isEditing={editId === item.event._id}
+                        onCancelEdit={() => setEditId(null)}
+                        onEdit={() => {
+                          setEditId(item.event._id);
+                          setStatus("");
+                        }}
+                        onSaved={(label) => {
+                          setEditId(null);
+                          setStatus(t("updated", { event: label }));
+                        }}
+                      />
+                    ),
+                  )}
+                </ol>
+              </section>
+            ))}
+            {isExhausted ? (
               timelineItems.length === 0 ? (
                 <div className="py-8 text-center">
                   <p className="text-sm text-muted-foreground">
@@ -517,7 +561,7 @@ function TimelinePage({ dog }: { dog: TimelineDog }) {
                   {t("end")}
                 </p>
               )
-            ) : timeline.status === "LoadingMore" ? (
+            ) : isLoadingMore ? (
               <Button
                 type="button"
                 disabled
@@ -527,16 +571,18 @@ function TimelinePage({ dog }: { dog: TimelineDog }) {
               >
                 {t("loadingMore")}
               </Button>
-            ) : (
-              <Button
-                type="button"
-                variant="secondary"
-                className="mt-5 w-full"
-                onClick={() => timeline.loadMore(30)}
-              >
-                {t("loadMore")}
-              </Button>
-            )}
+            ) : canLoadMore ? (
+              <div ref={loaderRef} className="pt-5">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="w-full"
+                  onClick={loadOlder}
+                >
+                  {t("loadMore")}
+                </Button>
+              </div>
+            ) : null}
           </>
         )}
       </section>

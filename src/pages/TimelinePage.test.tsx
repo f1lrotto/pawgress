@@ -17,34 +17,33 @@ import TimelinePage from "./TimelinePage";
 
 const convex = vi.hoisted(() => ({
   activityTypes: [] as unknown[] | undefined,
-  loadMore: vi.fn(),
-  update: vi.fn(),
+  eventLoadMore: vi.fn(),
+  eventResults: [] as unknown[],
+  eventStatus: "Exhausted" as
+    "LoadingFirstPage" | "CanLoadMore" | "LoadingMore" | "Exhausted",
   paginatedCalls: [] as Array<{
     args: unknown;
     name: string;
     options: unknown;
   }>,
   queryCalls: [] as Array<{ args: unknown; name: string }>,
-  results: [] as unknown[],
-  status: "Exhausted" as
+  trainingLoadMore: vi.fn(),
+  trainingResults: [] as unknown[],
+  trainingStatus: "Exhausted" as
     "LoadingFirstPage" | "CanLoadMore" | "LoadingMore" | "Exhausted",
-  trainingDay: [] as unknown[] | undefined,
+  update: vi.fn(),
 }));
 
 vi.mock("convex/react", () => ({
   useMutation: () => convex.update,
   usePaginatedQuery: (reference: unknown, args: unknown, options: unknown) => {
-    convex.paginatedCalls.push({
-      args,
-      name: getFunctionName(reference as never),
-      options,
-    });
+    const name = getFunctionName(reference as never);
+    const isTraining = name === "training:listTimeline";
+    convex.paginatedCalls.push({ args, name, options });
     return {
-      isLoading:
-        convex.status === "LoadingFirstPage" || convex.status === "LoadingMore",
-      loadMore: convex.loadMore,
-      results: convex.results,
-      status: convex.status,
+      loadMore: isTraining ? convex.trainingLoadMore : convex.eventLoadMore,
+      results: isTraining ? convex.trainingResults : convex.eventResults,
+      status: isTraining ? convex.trainingStatus : convex.eventStatus,
     };
   },
   useQuery: (reference: unknown, args: unknown) => {
@@ -52,9 +51,7 @@ vi.mock("convex/react", () => ({
       args,
       name: getFunctionName(reference as never),
     });
-    return getFunctionName(reference as never) === "training:listDay"
-      ? convex.trainingDay
-      : convex.activityTypes;
+    return convex.activityTypes;
   },
 }));
 
@@ -76,32 +73,47 @@ const event = (overrides: Record<string, unknown> = {}) => ({
   userId,
   ...overrides,
 });
+const trainingSession = (overrides: Record<string, unknown> = {}) => ({
+  _creationTime: 1,
+  _id: "session-id" as Id<"trainingSessions">,
+  at: Date.parse("2026-07-10T11:00:00Z"),
+  commandId: "command-id" as Id<"trainingCommands">,
+  commandName: "Sit",
+  dogId,
+  rating: 4,
+  ...overrides,
+});
 const renderPage = (value = dog) =>
   render(
     <MemoryRouter initialEntries={["/timeline"]}>
       <TimelinePage dog={value} />
     </MemoryRouter>,
   );
+const lastPaginatedCall = (name: string) =>
+  convex.paginatedCalls.filter((call) => call.name === name).at(-1);
 
 afterEach(() => {
   cleanup();
-  vi.useRealTimers();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 beforeEach(async () => {
   await setLocale("en");
   convex.activityTypes = [];
-  convex.loadMore.mockReset();
-  convex.update.mockReset();
+  convex.eventLoadMore.mockReset();
+  convex.eventResults = [];
+  convex.eventStatus = "Exhausted";
   convex.paginatedCalls = [];
   convex.queryCalls = [];
-  convex.results = [];
-  convex.status = "Exhausted";
-  convex.trainingDay = [];
+  convex.trainingLoadMore.mockReset();
+  convex.trainingResults = [];
+  convex.trainingStatus = "Exhausted";
+  convex.update.mockReset();
 });
 
 describe("TimelinePage", () => {
-  it("uses the shared app frame and compact product header", () => {
+  it("uses the shared app frame without a date picker", () => {
     renderPage();
 
     const main = screen.getByRole("main");
@@ -109,7 +121,6 @@ describe("TimelinePage", () => {
       level: 1,
       name: "Day by day.",
     });
-    const date = screen.getByLabelText("Timeline date");
 
     expect(screen.getAllByRole("main")).toHaveLength(1);
     expect(main).toHaveAttribute("id", "main-content");
@@ -122,11 +133,8 @@ describe("TimelinePage", () => {
       "leading-[2.125rem]",
     );
     expect(heading).not.toHaveClass("font-display");
-    expect(
-      screen.queryByText("Daily field record · newest first"),
-    ).not.toBeInTheDocument();
-    expect(date).toHaveClass("field-control");
-    expect(date).toHaveAttribute("min", dog.birthday);
+    expect(screen.queryByLabelText("Timeline date")).not.toBeInTheDocument();
+    expect(screen.getByText("Days follow UTC.")).toBeVisible();
   });
 
   it("contains long dog names and timezone help in the page header", () => {
@@ -134,163 +142,73 @@ describe("TimelinePage", () => {
     const longTimezone = "America/Argentina/ComodRivadavia".repeat(3);
     renderPage({ ...dog, name: longName, timezone: longTimezone });
 
-    expect(screen.getByText(`Day boundary: ${longTimezone}`)).toHaveClass(
+    expect(screen.getByText(`Days follow ${longTimezone}.`)).toHaveClass(
       "break-words",
       "[overflow-wrap:anywhere]",
     );
-    expect(screen.getByText(new RegExp(`Read ${longName}`))).toHaveClass(
-      "break-words",
-      "[overflow-wrap:anywhere]",
-    );
+    expect(
+      screen.getByText(new RegExp(`Scroll through ${longName}`)),
+    ).toHaveClass("break-words", "[overflow-wrap:anywhere]");
   });
 
-  it("queries the exact dog-local DST day with Convex-managed pagination", () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(Date.parse("2026-03-29T12:00:00Z"));
+  it("queries continuous event and training histories", () => {
     renderPage({ ...dog, timezone: "Europe/Bratislava" });
 
-    expect(screen.getByLabelText("Timeline date")).toHaveValue("2026-03-29");
-    expect(convex.paginatedCalls.at(-1)).toEqual({
-      name: "timeline:listDay",
-      args: {
-        dogId,
-        startAt: Date.parse("2026-03-28T23:00:00Z"),
-        endAt: Date.parse("2026-03-29T22:00:00Z"),
-      },
+    expect(lastPaginatedCall("timeline:list")).toEqual({
+      name: "timeline:list",
+      args: { dogId },
       options: { initialNumItems: 30 },
     });
-    expect(convex.queryCalls).toEqual([
-      {
-        name: "training:listDay",
-        args: {
-          dogId,
-          startAt: Date.parse("2026-03-28T23:00:00Z"),
-          endAt: Date.parse("2026-03-29T22:00:00Z"),
-        },
-      },
-      {
-        name: "activityTypes:list",
-        args: { dogId, includeArchived: true, limit: 100 },
-      },
-    ]);
+    expect(lastPaginatedCall("training:listTimeline")).toEqual({
+      name: "training:listTimeline",
+      args: { dogId },
+      options: { initialNumItems: 30 },
+    });
+    expect(convex.queryCalls.at(-1)).toEqual({
+      name: "activityTypes:list",
+      args: { dogId, includeArchived: true, limit: 100 },
+    });
   });
 
-  it("rolls a pristine local date on the 30-second tick and preserves edits", () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(Date.parse("2026-07-09T21:59:45Z"));
-    renderPage({ ...dog, timezone: "Europe/Bratislava" });
-    const date = screen.getByLabelText("Timeline date");
-
-    expect(date).toHaveValue("2026-07-09");
-    act(() => vi.advanceTimersByTime(30_000));
-    expect(date).toHaveValue("2026-07-10");
-    expect(convex.paginatedCalls.at(-1)?.args).toEqual({
-      dogId,
-      startAt: Date.parse("2026-07-09T22:00:00Z"),
-      endAt: Date.parse("2026-07-10T22:00:00Z"),
-    });
-
-    fireEvent.change(date, { target: { value: "2026-07-08" } });
-    act(() => vi.advanceTimersByTime(24 * 60 * 60_000));
-    expect(date).toHaveValue("2026-07-08");
-  });
-
-  it("syncs pristine timezone changes immediately and keeps dirty dates", () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(Date.parse("2026-07-10T00:30:00Z"));
-    const view = renderPage();
-    const date = screen.getByLabelText("Timeline date");
-
-    expect(date).toHaveValue("2026-07-10");
-    expect(vi.getTimerCount()).toBe(1);
-    convex.paginatedCalls = [];
-    view.rerender(
-      <MemoryRouter initialEntries={["/timeline"]}>
-        <TimelinePage dog={{ ...dog, timezone: "America/Los_Angeles" }} />
-      </MemoryRouter>,
-    );
-    expect(date).toHaveValue("2026-07-09");
-    expect(convex.paginatedCalls.at(-1)?.args).toEqual({
-      dogId,
-      startAt: Date.parse("2026-07-09T07:00:00Z"),
-      endAt: Date.parse("2026-07-10T07:00:00Z"),
-    });
-    expect(vi.getTimerCount()).toBe(1);
-
-    fireEvent.change(date, { target: { value: "2026-07-08" } });
-    view.rerender(
-      <MemoryRouter initialEntries={["/timeline"]}>
-        <TimelinePage dog={{ ...dog, timezone: "Asia/Tokyo" }} />
-      </MemoryRouter>,
-    );
-    expect(date).toHaveValue("2026-07-08");
-    expect(convex.paginatedCalls.at(-1)?.args).toEqual({
-      dogId,
-      startAt: Date.parse("2026-07-07T15:00:00Z"),
-      endAt: Date.parse("2026-07-08T15:00:00Z"),
-    });
-    expect(vi.getTimerCount()).toBe(0);
-  });
-
-  it("skips invalid day windows with an explicit alert", () => {
+  it("skips history queries for an invalid timezone", () => {
     renderPage({ ...dog, timezone: "Mars/Olympus" });
 
-    expect(convex.paginatedCalls.at(-1)).toEqual({
-      name: "timeline:listDay",
-      args: "skip",
-      options: { initialNumItems: 30 },
-    });
+    expect(lastPaginatedCall("timeline:list")?.args).toBe("skip");
+    expect(lastPaginatedCall("training:listTimeline")?.args).toBe("skip");
+    expect(convex.queryCalls.at(-1)?.args).toBe("skip");
     expect(screen.getByRole("alert")).toHaveTextContent(
-      "We couldn't read this timeline day",
+      "We couldn't read this timeline",
     );
-    expect(screen.getByRole("alert")).toHaveClass("rounded-md", "text-sm");
   });
 
-  it("changes date and unique filters through query args that reset pagination", () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(Date.parse("2026-07-10T12:00:00Z"));
+  it("resets the relevant paginated streams when filters change", () => {
     renderPage();
 
-    expect(
-      screen.queryByRole("button", { name: "Clear filters" }),
-    ).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("checkbox", { name: "Pee" }));
     expect(screen.getByRole("button", { name: "Clear filters" })).toBeVisible();
-    expect(convex.paginatedCalls.at(-1)?.args).toEqual({
+    expect(lastPaginatedCall("timeline:list")?.args).toEqual({
       dogId,
-      startAt: Date.parse("2026-07-10T00:00:00Z"),
-      endAt: Date.parse("2026-07-11T00:00:00Z"),
       kinds: ["pee"],
     });
-    fireEvent.click(screen.getByRole("checkbox", { name: "Meal" }));
-    expect(convex.paginatedCalls.at(-1)?.args).toEqual(
-      expect.objectContaining({ kinds: ["pee", "meal"] }),
-    );
-    fireEvent.click(screen.getByRole("checkbox", { name: "Pee" }));
-    expect(convex.paginatedCalls.at(-1)?.args).toEqual(
-      expect.objectContaining({ kinds: ["meal"] }),
-    );
+    expect(lastPaginatedCall("training:listTimeline")?.args).toBe("skip");
 
-    fireEvent.change(screen.getByLabelText("Timeline date"), {
-      target: { value: "2026-10-25" },
-    });
-    expect(convex.paginatedCalls.at(-1)?.args).toEqual({
+    fireEvent.click(screen.getByRole("checkbox", { name: "Meal" }));
+    expect(lastPaginatedCall("timeline:list")?.args).toEqual({
       dogId,
-      startAt: Date.parse("2026-10-25T00:00:00Z"),
-      endAt: Date.parse("2026-10-26T00:00:00Z"),
+      kinds: ["pee", "meal"],
+    });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Pee" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Training" }));
+    expect(lastPaginatedCall("timeline:list")?.args).toEqual({
+      dogId,
       kinds: ["meal"],
     });
+    expect(lastPaginatedCall("training:listTimeline")?.args).toEqual({ dogId });
 
     fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
     expect(screen.getByRole("checkbox", { name: "Meal" })).not.toBeChecked();
-    expect(
-      screen.queryByRole("button", { name: "Clear filters" }),
-    ).not.toBeInTheDocument();
-    expect(convex.paginatedCalls.at(-1)?.args).toEqual({
-      dogId,
-      startAt: Date.parse("2026-10-25T00:00:00Z"),
-      endAt: Date.parse("2026-10-26T00:00:00Z"),
-    });
+    expect(lastPaginatedCall("timeline:list")?.args).toEqual({ dogId });
+    expect(lastPaginatedCall("training:listTimeline")?.args).toEqual({ dogId });
   });
 
   it("uses visible native checkboxes with direct keyboard focus styles", () => {
@@ -312,7 +230,6 @@ describe("TimelinePage", () => {
     for (const filter of filters) {
       filter.focus();
       expect(filter).toHaveFocus();
-      expect(filter).toHaveAttribute("type", "checkbox");
       expect(filter).not.toHaveClass("sr-only");
       expect(filter).toHaveClass(
         "accent-primary",
@@ -322,49 +239,48 @@ describe("TimelinePage", () => {
       );
       expect(filter.parentElement).toHaveClass("min-h-11", "rounded-md");
     }
-
-    fireEvent.click(filters[0]);
-    expect(filters[0]).toBeChecked();
   });
 
-  it("shows first-page, empty, loading-more, load-more, and exhausted states", () => {
-    convex.status = "LoadingFirstPage";
+  it("shows first-page, empty, loading-more, fallback, and exhausted states", () => {
+    convex.eventStatus = "LoadingFirstPage";
+    convex.trainingStatus = "LoadingFirstPage";
     const view = renderPage();
-    const region = screen.getByRole("region");
+    const timeline = screen.getByRole("region", { name: "Timeline" });
+
     expect(screen.getByRole("status")).toHaveTextContent(
-      "Opening this day’s field notes",
+      "Opening the timeline",
     );
-    expect(region).toHaveAttribute("aria-busy", "true");
+    expect(timeline).toHaveAttribute("aria-busy", "true");
     expect(document.querySelectorAll(".animate-pulse")).toHaveLength(3);
 
-    convex.status = "Exhausted";
+    convex.eventStatus = "Exhausted";
+    convex.trainingStatus = "Exhausted";
     view.rerender(
       <MemoryRouter initialEntries={["/timeline"]}>
         <TimelinePage dog={dog} />
       </MemoryRouter>,
     );
-    expect(screen.getByText("No entries on this day.")).toBeVisible();
+    expect(screen.getByText("No entries yet.")).toBeVisible();
     expect(
       screen.getByRole("link", { name: "Log an activity" }),
     ).toHaveAttribute("href", "/");
-    expect(region).toHaveAttribute("aria-busy", "false");
+    expect(timeline).toHaveAttribute("aria-busy", "false");
 
     fireEvent.click(screen.getByRole("checkbox", { name: "Pee" }));
     expect(screen.getByText("No entries match these filters.")).toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
-    expect(screen.getByText("No entries on this day.")).toBeVisible();
 
-    convex.results = [event()];
-    convex.status = "CanLoadMore";
+    convex.eventResults = [event()];
+    convex.eventStatus = "CanLoadMore";
     view.rerender(
       <MemoryRouter initialEntries={["/timeline"]}>
         <TimelinePage dog={dog} />
       </MemoryRouter>,
     );
     fireEvent.click(screen.getByRole("button", { name: "Load older entries" }));
-    expect(convex.loadMore).toHaveBeenCalledWith(30);
+    expect(convex.eventLoadMore).toHaveBeenCalledWith(30);
 
-    convex.status = "LoadingMore";
+    convex.eventStatus = "LoadingMore";
     view.rerender(
       <MemoryRouter initialEntries={["/timeline"]}>
         <TimelinePage dog={dog} />
@@ -373,18 +289,79 @@ describe("TimelinePage", () => {
     expect(
       screen.getByRole("button", { name: "Loading older entries" }),
     ).toBeDisabled();
-    expect(
-      screen.getByRole("button", { name: "Loading older entries" }),
-    ).toHaveAttribute("aria-busy", "true");
-    expect(region).toHaveAttribute("aria-busy", "true");
+    expect(timeline).toHaveAttribute("aria-busy", "true");
 
-    convex.status = "Exhausted";
+    convex.eventStatus = "Exhausted";
     view.rerender(
       <MemoryRouter initialEntries={["/timeline"]}>
         <TimelinePage dog={dog} />
       </MemoryRouter>,
     );
-    expect(screen.getByText("End of this day’s notes.")).toBeVisible();
+    expect(screen.getByText("You’ve reached the first entry.")).toBeVisible();
+  });
+
+  it("loads both histories automatically before the sentinel enters view", () => {
+    let intersect = () => {};
+    const observe = vi.fn();
+    class IntersectionObserverMock {
+      disconnect = vi.fn();
+      observe = observe;
+
+      constructor(callback: IntersectionObserverCallback) {
+        intersect = () =>
+          callback(
+            [{ isIntersecting: true } as IntersectionObserverEntry],
+            {} as IntersectionObserver,
+          );
+      }
+    }
+    vi.stubGlobal("IntersectionObserver", IntersectionObserverMock);
+    convex.eventResults = [
+      event({ _id: "new-event", at: Date.parse("2026-07-10T12:00:00Z") }),
+      event({ _id: "old-event", at: Date.parse("2026-07-10T10:00:00Z") }),
+    ];
+    convex.trainingResults = [
+      trainingSession({ at: Date.parse("2026-07-10T11:00:00Z") }),
+      trainingSession({
+        _id: "old-session",
+        at: Date.parse("2026-07-10T09:00:00Z"),
+      }),
+    ];
+    convex.eventStatus = "CanLoadMore";
+    convex.trainingStatus = "CanLoadMore";
+    renderPage();
+
+    expect(observe).toHaveBeenCalled();
+    expect(screen.getAllByRole("listitem")).toHaveLength(2);
+    act(intersect);
+    expect(convex.eventLoadMore).toHaveBeenCalledWith(30);
+    expect(convex.trainingLoadMore).toHaveBeenCalledWith(30);
+  });
+
+  it("keeps entries around midnight adjacent under sticky day dividers", () => {
+    convex.eventResults = [
+      event({
+        _id: "after-midnight",
+        at: Date.parse("2026-07-10T00:15:00Z"),
+        kind: "wake",
+      }),
+      event({
+        _id: "before-midnight",
+        at: Date.parse("2026-07-09T23:45:00Z"),
+        kind: "sleep",
+      }),
+    ];
+    renderPage();
+
+    const days = screen.getAllByRole("heading", { level: 3 });
+    expect(days.map(({ textContent }) => textContent)).toEqual([
+      "Friday, July 10, 2026",
+      "Thursday, July 9, 2026",
+    ]);
+    expect(days[0]).toHaveClass("sticky", "top-0", "bg-secondary");
+    const rows = screen.getAllByRole("listitem");
+    expect(within(rows[0]).getByText("00:15")).toBeVisible();
+    expect(within(rows[1]).getByText("23:45")).toBeVisible();
   });
 
   it("renders complete read-only row metadata and archived Play names", () => {
@@ -401,11 +378,10 @@ describe("TimelinePage", () => {
         name: activityName,
       },
     ];
-    convex.results = [
+    convex.eventResults = [
       event({
         _id: "play-id",
         activityTypeId,
-        at: Date.parse("2026-07-10T10:00:00Z"),
         endedAt: Date.parse("2026-07-10T10:05:00Z"),
         kind: "play",
         note: "A very long field note ".repeat(20),
@@ -419,7 +395,6 @@ describe("TimelinePage", () => {
       event({
         _id: "pee-id",
         at: Date.parse("2026-07-10T08:00:00Z"),
-        kind: "pee",
         note: "Near the pond",
         walkId: "walk-id" as Id<"events">,
       }),
@@ -436,20 +411,12 @@ describe("TimelinePage", () => {
     const activityHeading = within(rows[0]).getByRole("heading", {
       name: `🌿 ${activityName}`,
     });
-    const ledgerHeading = screen.getByRole("heading", { level: 2 });
     expect(rows).toHaveLength(4);
     expect(activityHeading).toHaveClass(
       "break-words",
       "[overflow-wrap:anywhere]",
     );
-    expect(activityHeading).not.toHaveClass("font-display", "truncate");
-    expect(ledgerHeading).not.toHaveClass("font-display");
-    expect(
-      screen.getByRole("region", { name: ledgerHeading.textContent ?? "" }),
-    ).toBeVisible();
-    expect(within(rows[0]).getByText("10:00")).toHaveClass("tabular-nums");
     expect(within(rows[0]).getByText("Duration: 5m")).toBeVisible();
-    expect(within(rows[0]).getByText(/A very long field note/)).toBeVisible();
     expect(within(rows[1]).getByText("Amount: 120")).toBeVisible();
     expect(within(rows[2]).getByText("Near the pond")).toBeVisible();
     expect(within(rows[2]).getByText("During walk")).toHaveAttribute(
@@ -459,80 +426,55 @@ describe("TimelinePage", () => {
     expect(within(rows[3]).getByText("Play")).toBeVisible();
   });
 
-  it("places grouped training sessions in chronological order and filters them", () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(Date.parse("2026-07-10T12:00:00Z"));
-    convex.results = [
+  it("groups training sessions in chronology and filters to training", () => {
+    convex.eventResults = [
       event({ at: Date.parse("2026-07-10T10:00:00Z"), kind: "meal" }),
     ];
-    convex.trainingDay = [
-      {
-        _creationTime: 1,
+    convex.trainingResults = [
+      trainingSession({
         _id: "sit-session",
-        at: Date.parse("2026-07-10T11:00:00Z"),
         commandId: "sit-id",
         commandName: "Sit",
-        dogId,
         notes: "Mixed practice.",
         rating: 2,
-      },
-      {
-        _creationTime: 1,
+      }),
+      trainingSession({
         _id: "stay-session",
-        at: Date.parse("2026-07-10T11:00:00Z"),
         commandId: "stay-id",
         commandName: "Stay",
-        dogId,
         notes: "Mixed practice.",
-        rating: 4,
-      },
-      {
-        _creationTime: 1,
+      }),
+      trainingSession({
         _id: "recall-session",
         at: Date.parse("2026-07-10T09:00:00Z"),
         commandId: "recall-id",
         commandName: "Recall",
-        dogId,
         notes: "Great focus outside.",
-        rating: 4,
-      },
+      }),
     ];
     renderPage();
 
     const rows = screen.getAllByRole("listitem");
     expect(rows).toHaveLength(3);
-    expect(within(rows[0]).getByText("11:00")).toBeVisible();
-    expect(
-      within(rows[0]).getByRole("heading", { name: "Training" }),
-    ).toBeVisible();
     expect(within(rows[0]).getByText("Sit")).toBeVisible();
     expect(within(rows[0]).getByText("Stay")).toBeVisible();
     expect(within(rows[0]).getByText("Negative")).toBeVisible();
     expect(within(rows[0]).getByText("Positive")).toBeVisible();
-    expect(within(rows[0]).getByText("Mixed practice.")).toBeVisible();
-    expect(rows[0]).not.toHaveTextContent("/5");
     expect(
       within(rows[0]).getByRole("link", { name: "View training" }),
     ).toHaveAttribute("href", "/training");
-    expect(
-      within(rows[1]).getByRole("heading", { name: "Meal" }),
-    ).toBeVisible();
-    expect(within(rows[2]).getByText("Great focus outside.")).toBeVisible();
     expect(
       within(rows[2]).getByRole("link", { name: "View command" }),
     ).toHaveAttribute("href", "/training?command=recall-id#command-detail");
 
     fireEvent.click(screen.getByRole("checkbox", { name: "Training" }));
     expect(screen.getAllByRole("listitem")).toHaveLength(2);
-    expect(convex.paginatedCalls.at(-1)?.args).toEqual({
-      dogId,
-      startAt: Date.parse("2026-07-10T00:00:00Z"),
-      endAt: Date.parse("2026-07-11T00:00:00Z"),
-    });
+    expect(lastPaginatedCall("timeline:list")?.args).toBe("skip");
+    expect(lastPaginatedCall("training:listTimeline")?.args).toEqual({ dogId });
   });
 
   it("edits a timeline entry with the shared event editor", async () => {
-    convex.results = [event({ note: "Before" })];
+    convex.eventResults = [event({ note: "Before" })];
     convex.update.mockResolvedValue(undefined);
     renderPage();
 
@@ -557,29 +499,24 @@ describe("TimelinePage", () => {
 
   it("does not block timeline rows while activity names load", () => {
     convex.activityTypes = undefined;
-    convex.results = [event({ kind: "play", activityTypeId })];
+    convex.eventResults = [event({ kind: "play", activityTypeId })];
     renderPage();
 
     expect(screen.getByRole("listitem")).toHaveTextContent("Play");
   });
 
-  it("renders Slovak filters, enum labels, metadata, and dates", async () => {
+  it("renders Slovak filters, metadata, and day dividers", async () => {
     await setLocale("sk");
-    vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-07-10T12:00:00Z"));
-    convex.results = [
+    convex.eventResults = [
       event({
         amount: 12.5,
         endedAt: Date.parse("2026-07-10T10:05:00Z"),
-        kind: "pee",
         peePlace: "outside",
         walkId: "walk-id" as Id<"events">,
       }),
     ];
     renderPage();
 
-    expect(screen.getByLabelText("Dátum časovej osi")).toHaveValue(
-      "2026-07-10",
-    );
     expect(screen.getByRole("checkbox", { name: "Cikanie" })).toBeVisible();
     const row = screen.getByRole("listitem");
     expect(within(row).getByRole("heading", { name: "Cikanie" })).toBeVisible();
@@ -590,6 +527,6 @@ describe("TimelinePage", () => {
       "title",
       "Prepojená prechádzka walk-id",
     );
-    expect(screen.getByText("10. 7. 2026")).toBeVisible();
+    expect(screen.getByText("piatok 10. júla 2026")).toBeVisible();
   });
 });

@@ -445,14 +445,13 @@ test("a household can log and manage live activity", async ({
     .getByRole("link", { name: "Timeline" })
     .click();
   await expect(page).toHaveURL(/\/timeline$/);
-  const timelineDate = await page.getByLabel("Timeline date").inputValue();
-  const timelineDay = new Intl.DateTimeFormat("en", {
-    dateStyle: "medium",
-    timeZone: "UTC",
-  }).format(Date.parse(`${timelineDate}T00:00:00Z`));
   const timeline = page.getByRole("region", {
-    name: timelineDay,
+    name: "Timeline",
+    exact: true,
   });
+  await expect(
+    timeline.getByRole("heading", { level: 3 }).first(),
+  ).toBeVisible();
   await expect(
     timeline.getByRole("heading", { name: "Pee", exact: true }).first(),
   ).toBeVisible();

@@ -25,18 +25,16 @@ const eventKinds = [
   "note",
 ] as const;
 type EventKind = (typeof eventKinds)[number];
-type ListDayArgs = {
+type ListArgs = {
   dogId: Id<"dogs">;
-  startAt: number;
-  endAt: number;
   kinds?: EventKind[];
   paginationOpts: PaginationOptions;
 };
 type TimelineApi = {
-  listDay: FunctionReference<
+  list: FunctionReference<
     "query",
     "public",
-    ListDayArgs,
+    ListArgs,
     PaginationResult<Doc<"events">>
   >;
 };
@@ -82,11 +80,9 @@ const setup = async () => {
 
 const listArgs = (
   dogId: Id<"dogs">,
-  overrides: Partial<ListDayArgs> = {},
-): ListDayArgs => ({
+  overrides: Partial<ListArgs> = {},
+): ListArgs => ({
   dogId,
-  startAt: 0,
-  endAt: 10_000,
   paginationOpts: { numItems: 50, cursor: null },
   ...overrides,
 });
@@ -103,32 +99,30 @@ const insertEvents = (
     ),
   );
 
-describe("timeline listDay", () => {
+describe("timeline list", () => {
   it("requires authentication and membership without crossing dogs", async () => {
     const { dogId, member, otherDogId, owner, ownerId, stranger, t } =
       await setup();
     await insertEvents(t, dogId, ownerId, [{ kind: "pee", at: 100 }]);
     await insertEvents(t, otherDogId, ownerId, [{ kind: "meal", at: 200 }]);
 
-    await expect(t.query(timeline.listDay, listArgs(dogId))).rejects.toThrow(
+    await expect(t.query(timeline.list, listArgs(dogId))).rejects.toThrow(
       "UNAUTHENTICATED",
     );
     await expect(
-      stranger.query(timeline.listDay, listArgs(dogId)),
+      stranger.query(timeline.list, listArgs(dogId)),
     ).rejects.toThrow("FORBIDDEN");
     await expect(
-      member.query(timeline.listDay, listArgs(otherDogId)),
+      member.query(timeline.list, listArgs(otherDogId)),
     ).rejects.toThrow("FORBIDDEN");
-    await expect(
-      owner.query(timeline.listDay, listArgs(dogId)),
-    ).resolves.toEqual(
+    await expect(owner.query(timeline.list, listArgs(dogId))).resolves.toEqual(
       expect.objectContaining({
         page: [expect.objectContaining({ dogId, kind: "pee" })],
       }),
     );
   });
 
-  it("uses exclusive end boundaries and returns raw events newest first", async () => {
+  it("returns the full raw event history newest first", async () => {
     const { dogId, owner, ownerId, t } = await setup();
     const [atStart, middle, atEnd] = await insertEvents(t, dogId, ownerId, [
       { kind: "pee", at: 100, note: "start" },
@@ -136,12 +130,10 @@ describe("timeline listDay", () => {
       { kind: "poop", at: 200, note: "end" },
     ]);
 
-    const result = await owner.query(
-      timeline.listDay,
-      listArgs(dogId, { startAt: 100, endAt: 200 }),
-    );
-    expect(result.page.map(({ _id }) => _id)).toEqual([middle, atStart]);
+    const result = await owner.query(timeline.list, listArgs(dogId));
+    expect(result.page.map(({ _id }) => _id)).toEqual([atEnd, middle, atStart]);
     expect(result.page).toEqual([
+      expect.objectContaining({ _id: atEnd, at: 200 }),
       expect.objectContaining({
         _id: middle,
         dogId,
@@ -151,7 +143,6 @@ describe("timeline listDay", () => {
       }),
       expect.objectContaining({ _id: atStart, at: 100 }),
     ]);
-    expect(result.page.map(({ _id }) => _id)).not.toContain(atEnd);
     expect(result.page[0]).not.toHaveProperty("activityType");
   });
 
@@ -163,13 +154,13 @@ describe("timeline listDay", () => {
       { kind: "note", at: 300 },
     ]);
 
-    const all = await owner.query(timeline.listDay, listArgs(dogId));
+    const all = await owner.query(timeline.list, listArgs(dogId));
     const pee = await owner.query(
-      timeline.listDay,
+      timeline.list,
       listArgs(dogId, { kinds: ["pee"] }),
     );
     const mixed = await owner.query(
-      timeline.listDay,
+      timeline.list,
       listArgs(dogId, { kinds: ["pee", "note"] }),
     );
     expect(all.page.map(({ kind }) => kind)).toEqual(["note", "meal", "pee"]);
@@ -193,7 +184,7 @@ describe("timeline listDay", () => {
     let done = false;
     while (!done) {
       const result: PaginationResult<Doc<"events">> = await owner.query(
-        timeline.listDay,
+        timeline.list,
         listArgs(dogId, {
           paginationOpts: { numItems: 3, cursor },
         }),
@@ -206,36 +197,19 @@ describe("timeline listDay", () => {
     expect(new Set(seen)).toHaveLength(ids.length);
   });
 
-  it("rejects malformed or overly wide windows", async () => {
-    const { dogId, owner } = await setup();
-    const invalidWindows = [
-      { startAt: Number.NaN, endAt: 1 },
-      { startAt: 0, endAt: Number.POSITIVE_INFINITY },
-      { startAt: -1, endAt: 1 },
-      { startAt: 1, endAt: 1 },
-      { startAt: 2, endAt: 1 },
-      { startAt: 0, endAt: 27 * 60 * 60 * 1_000 + 1 },
-    ];
-    for (const window of invalidWindows) {
-      await expect(
-        owner.query(timeline.listDay, listArgs(dogId, window)),
-      ).rejects.toThrow("INVALID_TIMELINE_WINDOW");
-    }
-  });
-
   it("rejects empty, duplicate, excessive, and unknown kind filters", async () => {
     const { dogId, owner } = await setup();
     for (const kinds of [[], ["pee", "pee"], [...eventKinds, "pee"]]) {
       await expect(
         owner.query(
-          timeline.listDay,
+          timeline.list,
           listArgs(dogId, { kinds: kinds as EventKind[] }),
         ),
       ).rejects.toThrow("INVALID_EVENT_KINDS");
     }
     await expect(
       owner.query(
-        timeline.listDay,
+        timeline.list,
         listArgs(dogId, { kinds: ["nap"] as unknown as EventKind[] }),
       ),
     ).rejects.toThrow();
@@ -246,20 +220,20 @@ describe("timeline listDay", () => {
     for (const numItems of [0, 1.5, 51, Number.POSITIVE_INFINITY]) {
       await expect(
         owner.query(
-          timeline.listDay,
+          timeline.list,
           listArgs(dogId, { paginationOpts: { numItems, cursor: null } }),
         ),
       ).rejects.toThrow("INVALID_PAGE_SIZE");
     }
     await expect(
       owner.query(
-        timeline.listDay,
+        timeline.list,
         listArgs(dogId, { paginationOpts: { numItems: 1, cursor: null } }),
       ),
     ).resolves.toEqual(expect.objectContaining({ page: [] }));
     await expect(
       owner.query(
-        timeline.listDay,
+        timeline.list,
         listArgs(dogId, { paginationOpts: { numItems: 50, cursor: null } }),
       ),
     ).resolves.toEqual(expect.objectContaining({ page: [] }));
@@ -276,7 +250,7 @@ describe("timeline listDay", () => {
     ]);
 
     const first = await owner.query(
-      timeline.listDay,
+      timeline.list,
       listArgs(dogId, {
         kinds: ["note"],
         paginationOpts: {
@@ -290,7 +264,7 @@ describe("timeline listDay", () => {
     expect(first.isDone).toBe(false);
 
     const second = await owner.query(
-      timeline.listDay,
+      timeline.list,
       listArgs(dogId, {
         kinds: ["note"],
         paginationOpts: { numItems: 1, cursor: first.continueCursor },

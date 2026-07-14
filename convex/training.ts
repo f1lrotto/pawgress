@@ -1,3 +1,7 @@
+import {
+  paginationOptsValidator,
+  paginationResultValidator,
+} from "convex/server";
 import { ConvexError, v } from "convex/values";
 
 import type { Doc, Id } from "./_generated/dataModel";
@@ -10,6 +14,7 @@ const maxDescriptionLength = 1_000;
 const maxHowToTrainLength = 2_000;
 const maxNameLength = 64;
 const maxNotesLength = 500;
+const maxPageSize = 50;
 const maxSessions = 100;
 const maxWindowMs = 27 * 60 * 60 * 1_000;
 
@@ -52,6 +57,18 @@ const daySession = v.object({
   ...session.fields,
   commandName: v.string(),
 });
+
+const withCommandName = async (
+  ctx: QueryCtx,
+  dogId: Id<"dogs">,
+  item: Doc<"trainingSessions">,
+) => {
+  const command = await ctx.db.get("trainingCommands", item.commandId);
+  if (command === null || command.dogId !== dogId) {
+    throw new ConvexError("COMMAND_NOT_FOUND");
+  }
+  return { ...item, commandName: command.name };
+};
 
 const normalizeName = (name: string) => {
   const value = name.normalize("NFKC").trim();
@@ -195,14 +212,27 @@ export const listDay = dogQuery({
       .order("desc")
       .collect();
     return Promise.all(
-      sessions.map(async (item) => {
-        const command = await ctx.db.get("trainingCommands", item.commandId);
-        if (command === null || command.dogId !== dogId) {
-          throw new ConvexError("COMMAND_NOT_FOUND");
-        }
-        return { ...item, commandName: command.name };
-      }),
+      sessions.map((item) => withCommandName(ctx, dogId, item)),
     );
+  },
+});
+
+export const listTimeline = dogQuery({
+  args: { paginationOpts: paginationOptsValidator },
+  returns: paginationResultValidator(daySession),
+  handler: async (ctx, { dogId, paginationOpts }) => {
+    validateLimit(paginationOpts.numItems, maxPageSize);
+    const result = await ctx.db
+      .query("trainingSessions")
+      .withIndex("by_dog_at", (q) => q.eq("dogId", dogId))
+      .order("desc")
+      .paginate({ ...paginationOpts, maximumRowsRead: maxPageSize });
+    return {
+      ...result,
+      page: await Promise.all(
+        result.page.map((item) => withCommandName(ctx, dogId, item)),
+      ),
+    };
   },
 });
 
