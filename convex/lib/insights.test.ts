@@ -9,6 +9,20 @@ import {
 const minute = 60_000;
 
 describe("bucketPottyByHour", () => {
+  it("uses Bratislava hours instead of UTC hours", () => {
+    const buckets = bucketPottyByHour(
+      ["2026-07-13T17:36:45.263Z", "2026-07-13T17:57:12.248Z"].map((at) => ({
+        kind: "pee" as const,
+        at: Date.parse(at),
+        peePlace: "inside" as const,
+      })),
+      "Europe/Bratislava",
+    );
+
+    expect(buckets[17].peeInside).toBe(0);
+    expect(buckets[19].peeInside).toBe(2);
+  });
+
   it("combines both occurrences of a repeated DST hour", () => {
     const buckets = bucketPottyByHour(
       [

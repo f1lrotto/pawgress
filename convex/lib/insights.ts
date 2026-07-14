@@ -1,5 +1,3 @@
-import { TZDateMini } from "@date-fns/tz";
-
 export type PottyEvent = {
   kind: "pee" | "poop";
   at: number;
@@ -16,15 +14,24 @@ export type InsightDay = { date: string; startAt: number; endAt: number };
 
 const outingMergeMs = 10 * 60 * 1_000;
 
-const zonedHour = (at: number, timezone: string) => {
+const zonedHour = (timezone: string) => {
   if (!timezone || /^[+-]/.test(timezone)) throw new RangeError("Invalid zone");
-  const hour = new TZDateMini(at, timezone).getHours();
-  if (!Number.isInteger(hour)) throw new RangeError("Invalid zone");
-  return hour;
+  const formatter = new Intl.DateTimeFormat("en-GB", {
+    hour: "numeric",
+    hourCycle: "h23",
+    timeZone: timezone,
+  });
+  return (at: number) => {
+    const hour = Number(formatter.format(at));
+    if (!Number.isInteger(hour) || hour < 0 || hour > 23) {
+      throw new RangeError("Invalid zone");
+    }
+    return hour;
+  };
 };
 
 export const bucketPottyByHour = (events: PottyEvent[], timezone: string) => {
-  zonedHour(0, timezone);
+  const hourAt = zonedHour(timezone);
   const buckets = Array.from({ length: 24 }, (_, hour) => ({
     hour,
     peeInside: 0,
@@ -32,7 +39,7 @@ export const bucketPottyByHour = (events: PottyEvent[], timezone: string) => {
     poop: 0,
   }));
   for (const event of events) {
-    const bucket = buckets[zonedHour(event.at, timezone)];
+    const bucket = buckets[hourAt(event.at)];
     if (event.kind === "poop") bucket.poop += 1;
     else if (event.peePlace === "inside") bucket.peeInside += 1;
     else if (event.peePlace === "outside") bucket.peeOutside += 1;
