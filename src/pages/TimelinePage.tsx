@@ -53,6 +53,7 @@ const filterOptions = [
   "pee",
   "poop",
   "meal",
+  "water",
   "treat",
   "wake",
   "sleep",

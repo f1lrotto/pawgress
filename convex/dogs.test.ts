@@ -4,7 +4,11 @@ import { convexTest } from "convex-test";
 import { expect, test } from "vitest";
 
 import { api } from "./_generated/api";
-import { maxDogMemberships } from "./dogs";
+import {
+  maxDogMemberships,
+  maxWaterIntervalMinutes,
+  minWaterIntervalMinutes,
+} from "./dogs";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.*s");
@@ -57,6 +61,53 @@ test("lists the same dog with each user's membership role", async () => {
       .withIdentity({ subject: `${strangerId}|test-session` })
       .query(api.dogs.listMine),
   ).resolves.toEqual([]);
+});
+
+test("shares an optional validated water interval with the household", async () => {
+  const t = convexTest(schema, modules);
+  const { dogId, memberId, ownerId } = await t.run(async ({ db }) => {
+    const ownerId = await db.insert("users", {});
+    const memberId = await db.insert("users", {});
+    const dogId = await db.insert("dogs", {
+      name: "Zoe",
+      birthday: "2024-01-01",
+      timezone: "UTC",
+      createdBy: ownerId,
+    });
+    await Promise.all([
+      db.insert("dogMembers", { dogId, userId: ownerId, role: "owner" }),
+      db.insert("dogMembers", { dogId, userId: memberId, role: "member" }),
+    ]);
+    return { dogId, memberId, ownerId };
+  });
+  const owner = t.withIdentity({ subject: `${ownerId}|test-session` });
+  const member = t.withIdentity({ subject: `${memberId}|test-session` });
+
+  await member.mutation(api.dogs.setWaterTracking, {
+    dogId,
+    intervalMinutes: 120,
+  });
+  await expect(owner.query(api.dogs.listMine)).resolves.toEqual([
+    expect.objectContaining({ _id: dogId, waterIntervalMinutes: 120 }),
+  ]);
+
+  for (const intervalMinutes of [
+    minWaterIntervalMinutes - 1,
+    maxWaterIntervalMinutes + 1,
+    120.5,
+  ]) {
+    await expect(
+      owner.mutation(api.dogs.setWaterTracking, { dogId, intervalMinutes }),
+    ).rejects.toThrow("INVALID_WATER_INTERVAL");
+  }
+
+  await owner.mutation(api.dogs.setWaterTracking, {
+    dogId,
+    intervalMinutes: null,
+  });
+  expect((await member.query(api.dogs.listMine))[0]).not.toHaveProperty(
+    "waterIntervalMinutes",
+  );
 });
 
 test("lists multiple dogs in deterministic name order with exact roles", async () => {

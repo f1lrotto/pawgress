@@ -17,6 +17,7 @@ export const event = v.object({
     v.literal("pee"),
     v.literal("poop"),
     v.literal("meal"),
+    v.literal("water"),
     v.literal("treat"),
     v.literal("wake"),
     v.literal("sleep"),

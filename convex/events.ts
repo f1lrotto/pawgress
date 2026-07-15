@@ -23,13 +23,22 @@ import {
 const maxAmount = 10_000;
 const maxListLimit = 100;
 
-const quickKinds = ["pee", "poop", "meal", "treat", "wake", "sleep"] as const;
+const quickKinds = [
+  "pee",
+  "poop",
+  "meal",
+  "water",
+  "treat",
+  "wake",
+  "sleep",
+] as const;
 type QuickKind = (typeof quickKinds)[number];
 
 const quickKind = v.union(
   v.literal("pee"),
   v.literal("poop"),
   v.literal("meal"),
+  v.literal("water"),
   v.literal("treat"),
   v.literal("wake"),
   v.literal("sleep"),
@@ -258,12 +267,41 @@ export const listRecent = dogQuery({
       .take(validateLimit(limit)),
 });
 
+export const waterCount = dogQuery({
+  args: { startAt: v.number(), endAt: v.number() },
+  returns: v.number(),
+  handler: async (ctx, { dogId, startAt, endAt }) => {
+    if (
+      !Number.isFinite(startAt) ||
+      !Number.isFinite(endAt) ||
+      startAt < 0 ||
+      endAt <= startAt ||
+      endAt - startAt > 48 * 60 * 60_000
+    ) {
+      throw new ConvexError("INVALID_TIME_RANGE");
+    }
+    return (
+      await ctx.db
+        .query("events")
+        .withIndex("by_dog_kind_at", (q) =>
+          q
+            .eq("dogId", dogId)
+            .eq("kind", "water")
+            .gte("at", startAt)
+            .lt("at", endAt),
+        )
+        .collect()
+    ).length;
+  },
+});
+
 export const latestByKind = dogQuery({
   args: {},
   returns: v.object({
     pee: v.union(event, v.null()),
     poop: v.union(event, v.null()),
     meal: v.union(event, v.null()),
+    water: v.union(event, v.null()),
     treat: v.union(event, v.null()),
     wake: v.union(event, v.null()),
     sleep: v.union(event, v.null()),
@@ -278,10 +316,8 @@ export const latestByKind = dogQuery({
         )
         .order("desc")
         .first();
-    const [pee, poop, meal, treat, wake, sleep, walk] = await Promise.all([
-      ...quickKinds.map(findLatest),
-      findLatest("walk"),
-    ]);
-    return { pee, poop, meal, treat, wake, sleep, walk };
+    const [pee, poop, meal, water, treat, wake, sleep, walk] =
+      await Promise.all([...quickKinds.map(findLatest), findLatest("walk")]);
+    return { pee, poop, meal, water, treat, wake, sleep, walk };
   },
 });

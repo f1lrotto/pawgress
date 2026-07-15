@@ -79,6 +79,7 @@ vi.mock("convex/react", () => ({
         poop: null,
         sleep: null,
         treat: null,
+        water: null,
         wake: null,
         walk: null,
       };

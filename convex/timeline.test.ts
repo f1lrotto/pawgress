@@ -17,6 +17,7 @@ const eventKinds = [
   "pee",
   "poop",
   "meal",
+  "water",
   "treat",
   "wake",
   "sleep",

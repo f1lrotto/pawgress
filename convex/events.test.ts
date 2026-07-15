@@ -121,6 +121,7 @@ test("orders backdated events and returns the latest quick event by kind", async
     pee: expect.objectContaining({ _id: peeId, at: validAt + 3_000 }),
     poop: expect.objectContaining({ _id: poopId, at: validAt + 2_000 }),
     meal: expect.objectContaining({ _id: mealId, at: validAt + 1_000 }),
+    water: null,
     treat: null,
     wake: null,
     sleep: null,
@@ -455,7 +456,15 @@ test("accepts exact payload, timestamp, and list bounds", async () => {
 
 test("round-trips every quick kind and rejects deferred event kinds", async () => {
   const { dogId, owner } = await setup();
-  const kinds = ["pee", "poop", "meal", "treat", "wake", "sleep"] as const;
+  const kinds = [
+    "pee",
+    "poop",
+    "meal",
+    "water",
+    "treat",
+    "wake",
+    "sleep",
+  ] as const;
   const ids = await Promise.all(
     kinds.map((kind, index) =>
       owner.mutation(api.events.logQuick, {
@@ -495,4 +504,37 @@ test("round-trips every quick kind and rejects deferred event kinds", async () =
       at: validAt,
     }),
   ).rejects.toThrow();
+});
+
+test("counts today's water events in a half-open time range", async () => {
+  const { dogId, owner } = await setup();
+  await Promise.all(
+    [1_000, 2_000, 3_000].map((offset) =>
+      owner.mutation(api.events.logQuick, {
+        dogId,
+        kind: "water",
+        at: validAt + offset,
+      }),
+    ),
+  );
+  await owner.mutation(api.events.logQuick, {
+    dogId,
+    kind: "meal",
+    at: validAt + 2_000,
+  });
+
+  await expect(
+    owner.query(api.events.waterCount, {
+      dogId,
+      startAt: validAt + 2_000,
+      endAt: validAt + 4_000,
+    }),
+  ).resolves.toBe(2);
+  await expect(
+    owner.query(api.events.waterCount, {
+      dogId,
+      startAt: validAt,
+      endAt: validAt,
+    }),
+  ).rejects.toThrow("INVALID_TIME_RANGE");
 });

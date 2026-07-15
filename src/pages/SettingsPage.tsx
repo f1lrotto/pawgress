@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from "convex/react";
-import { useEffect, useRef, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { api } from "../../convex/_generated/api";
@@ -9,10 +9,15 @@ import InstallAppSection from "@/components/InstallAppSection";
 import RedeemInviteForm from "@/components/RedeemInviteForm";
 import { Button } from "@/components/ui/button";
 import type { InstallApp } from "@/hooks/useInstallPrompt";
+import { formatDuration } from "@/i18n/format";
 import { setLocale } from "@/i18n";
 import type { Locale } from "@/i18n/locale";
 
-type SettingsDog = Pick<Doc<"dogs">, "_id" | "name">;
+type SettingsDog = Pick<Doc<"dogs">, "_id" | "name" | "waterIntervalMinutes">;
+
+const waterIntervals = [
+  15, 30, 60, 90, 120, 180, 240, 360, 480, 720, 1440,
+] as const;
 
 const hasErrorCode = (error: unknown, code: string) =>
   (error instanceof Error && error.message.includes(code)) ||
@@ -33,6 +38,7 @@ function SettingsPage({
   const members = useQuery(api.sharing.listMembers, { dogId: dog._id });
   const activeInvite = useQuery(api.sharing.activeInvite, { dogId: dog._id });
   const persistLocale = useMutation(api.preferences.setLocale);
+  const setWaterTracking = useMutation(api.dogs.setWaterTracking);
   const generateInvite = useMutation(api.sharing.generateInvite);
   const revokeInvite = useMutation(api.sharing.revokeInvite);
   const [inviteError, setInviteError] = useState<{
@@ -49,6 +55,7 @@ function SettingsPage({
   const operationLock = useRef(false);
   const copyLock = useRef(false);
   const languageLock = useRef(false);
+  const waterLock = useRef(false);
   const languageErrorRef = useRef<HTMLParagraphElement>(null);
   const [languagePending, setLanguagePending] = useState(false);
   const [languageError, setLanguageError] = useState(false);
@@ -58,6 +65,18 @@ function SettingsPage({
     inviteId: Doc<"invites">["_id"];
     status: "copying" | "copied" | "error";
   } | null>(null);
+  const [waterEnabled, setWaterEnabled] = useState(
+    dog.waterIntervalMinutes !== undefined,
+  );
+  const [waterInterval, setWaterInterval] = useState(
+    String(dog.waterIntervalMinutes ?? 120),
+  );
+  const [waterStatus, setWaterStatus] = useState<
+    "idle" | "saving" | "saved" | "error"
+  >("idle");
+  const hasCustomWaterInterval = !waterIntervals.some(
+    (minutes) => String(minutes) === waterInterval,
+  );
 
   useEffect(() => {
     if (languageError) languageErrorRef.current?.focus();
@@ -80,6 +99,24 @@ function SettingsPage({
     } finally {
       languageLock.current = false;
       setLanguagePending(false);
+    }
+  };
+
+  const saveWaterTracking = async (event: FormEvent) => {
+    event.preventDefault();
+    if (waterLock.current) return;
+    waterLock.current = true;
+    setWaterStatus("saving");
+    try {
+      await setWaterTracking({
+        dogId: dog._id,
+        intervalMinutes: waterEnabled ? Number(waterInterval) : null,
+      });
+      setWaterStatus("saved");
+    } catch {
+      setWaterStatus("error");
+    } finally {
+      waterLock.current = false;
     }
   };
 
@@ -151,7 +188,12 @@ function SettingsPage({
   return (
     <AppFrame
       dogName={dog.name}
-      isBusy={languagePending || operation !== null || copyPending}
+      isBusy={
+        languagePending ||
+        waterStatus === "saving" ||
+        operation !== null ||
+        copyPending
+      }
     >
       <section className="py-6 sm:py-8" aria-labelledby="settings-title">
         <h1
@@ -243,6 +285,138 @@ function SettingsPage({
             )}
           </div>
         </div>
+      </section>
+
+      <section
+        aria-labelledby="water-title"
+        className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-6 border-b border-border py-6 sm:py-8 lg:grid-cols-[1.1fr_0.9fr] lg:items-start"
+      >
+        <div className="min-w-0">
+          <h2 id="water-title" className="text-xl font-bold leading-[1.625rem]">
+            {t("water.title")}
+          </h2>
+          <p className="mt-3 max-w-[70ch] text-sm leading-5 text-muted-foreground">
+            {t("water.description", { dogName: dog.name })}
+          </p>
+        </div>
+        <form
+          aria-label={t("water.form")}
+          aria-busy={waterStatus === "saving"}
+          className="min-w-0 rounded-xl bg-muted/70 p-5"
+          onSubmit={(event) => void saveWaterTracking(event)}
+        >
+          <fieldset
+            disabled={waterStatus === "saving"}
+            className="m-0 border-0 p-0"
+          >
+            <label
+              htmlFor="water-enabled"
+              className="flex min-h-11 cursor-pointer items-center gap-3 text-sm font-semibold"
+            >
+              <input
+                id="water-enabled"
+                type="checkbox"
+                checked={waterEnabled}
+                className="size-5 shrink-0 accent-primary"
+                onChange={(event) => {
+                  setWaterEnabled(event.target.checked);
+                  setWaterStatus("idle");
+                }}
+              />
+              {t("water.enable", { dogName: dog.name })}
+            </label>
+
+            <div className="mt-4">
+              <label htmlFor="water-interval" className="text-sm font-semibold">
+                {t("water.interval")}
+              </label>
+              <select
+                id="water-interval"
+                value={hasCustomWaterInterval ? "custom" : waterInterval}
+                disabled={!waterEnabled || waterStatus === "saving"}
+                aria-describedby="water-interval-help"
+                className="field-control mt-2 w-full"
+                onChange={(event) => {
+                  setWaterInterval(
+                    event.target.value === "custom" ? "" : event.target.value,
+                  );
+                  setWaterStatus("idle");
+                }}
+              >
+                {waterIntervals.map((minutes) => (
+                  <option key={minutes} value={minutes}>
+                    {formatDuration(
+                      minutes * 60_000,
+                      i18n.resolvedLanguage === "sk" ? "sk" : "en",
+                    )}
+                  </option>
+                ))}
+                <option value="custom">{t("water.custom")}</option>
+              </select>
+              {hasCustomWaterInterval && (
+                <div className="mt-4">
+                  <label
+                    htmlFor="water-custom-interval"
+                    className="text-sm font-semibold"
+                  >
+                    {t("water.customInterval")}
+                  </label>
+                  <input
+                    id="water-custom-interval"
+                    type="number"
+                    inputMode="numeric"
+                    min="15"
+                    max="1440"
+                    step="1"
+                    required={waterEnabled}
+                    value={waterInterval}
+                    disabled={!waterEnabled || waterStatus === "saving"}
+                    aria-describedby="water-custom-interval-help"
+                    className="field-control mt-2 w-full"
+                    onChange={(event) => {
+                      setWaterInterval(event.target.value);
+                      setWaterStatus("idle");
+                    }}
+                  />
+                  <p
+                    id="water-custom-interval-help"
+                    className="mt-2 text-sm text-muted-foreground"
+                  >
+                    {t("water.customHelp")}
+                  </p>
+                </div>
+              )}
+              <p
+                id="water-interval-help"
+                className="mt-2 text-sm text-muted-foreground"
+              >
+                {t("water.intervalHelp")}
+              </p>
+            </div>
+
+            <Button type="submit" className="mt-4 w-full">
+              {waterStatus === "saving" ? t("water.saving") : t("water.save")}
+            </Button>
+          </fieldset>
+          <div aria-live="polite">
+            {waterStatus === "saved" && (
+              <p
+                role="status"
+                className="mt-3 text-sm font-semibold text-success"
+              >
+                {t(waterEnabled ? "water.saved" : "water.disabled")}
+              </p>
+            )}
+            {waterStatus === "error" && (
+              <p
+                role="alert"
+                className="mt-3 text-sm font-semibold text-destructive"
+              >
+                {t("water.error")}
+              </p>
+            )}
+          </div>
+        </form>
       </section>
 
       <InstallAppSection installApp={installApp} />

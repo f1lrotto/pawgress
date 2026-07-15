@@ -9,7 +9,7 @@ import { getFunctionName } from "convex/server";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { Id } from "../../convex/_generated/dataModel";
+import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { DogSelectionProvider } from "@/contexts/DogSelectionContext";
 import type { InstallApp } from "@/hooks/useInstallPrompt";
 import { setLocale } from "@/i18n";
@@ -23,6 +23,7 @@ const convex = vi.hoisted(() => ({
   redeemInvite: vi.fn(),
   revokeInvite: vi.fn(),
   setLocale: vi.fn(),
+  setWaterTracking: vi.fn(),
   user: { name: "Taylor", email: "current@example.com" } as
     { name?: string; email?: string } | undefined,
 }));
@@ -31,7 +32,11 @@ vi.mock("convex/react", () => ({
   useMutation: (reference: unknown) =>
     convex[
       getFunctionName(reference as never).split(":")[1] as
-        "generateInvite" | "redeemInvite" | "revokeInvite" | "setLocale"
+        | "generateInvite"
+        | "redeemInvite"
+        | "revokeInvite"
+        | "setLocale"
+        | "setWaterTracking"
     ],
   useQuery: (reference: unknown, args: unknown) => {
     const functionName = getFunctionName(reference as never);
@@ -43,7 +48,10 @@ vi.mock("convex/react", () => ({
 }));
 
 const dogId = "dog-id" as Id<"dogs">;
-const dog = { _id: dogId, name: "Milo" };
+const dog: Pick<Doc<"dogs">, "_id" | "name" | "waterIntervalMinutes"> = {
+  _id: dogId,
+  name: "Milo",
+};
 const selectDog = vi.fn();
 const stubClipboard = (writeText: Clipboard["writeText"]) => {
   const { maxTouchPoints, platform, userAgent } = navigator;
@@ -91,6 +99,8 @@ beforeEach(async () => {
   convex.revokeInvite.mockResolvedValue(null);
   convex.setLocale.mockReset();
   convex.setLocale.mockResolvedValue(null);
+  convex.setWaterTracking.mockReset();
+  convex.setWaterTracking.mockResolvedValue(null);
   convex.user = { name: "Taylor", email: "current@example.com" };
   selectDog.mockReset();
 });
@@ -143,6 +153,74 @@ describe("SettingsPage", () => {
     expect(
       screen.getByText("No household members are listed yet."),
     ).toBeInTheDocument();
+  });
+
+  it("enables, configures, and disables shared water tracking", async () => {
+    renderPage();
+    const enabled = screen.getByRole("checkbox", {
+      name: "Track water for Milo",
+    });
+    const interval = screen.getByRole("combobox", {
+      name: "Drink reminder interval",
+    });
+
+    expect(enabled).not.toBeChecked();
+    expect(interval).toBeDisabled();
+    fireEvent.click(enabled);
+    fireEvent.change(interval, { target: { value: "120" } });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Save water tracking" }),
+    );
+
+    await waitFor(() =>
+      expect(convex.setWaterTracking).toHaveBeenCalledWith({
+        dogId,
+        intervalMinutes: 120,
+      }),
+    );
+    expect(await screen.findByText("Water tracking updated.")).toBeVisible();
+
+    fireEvent.click(enabled);
+    fireEvent.click(
+      screen.getByRole("button", { name: "Save water tracking" }),
+    );
+    await waitFor(() =>
+      expect(convex.setWaterTracking).toHaveBeenLastCalledWith({
+        dogId,
+        intervalMinutes: null,
+      }),
+    );
+    expect(
+      await screen.findByText(/Existing drink history is still available/),
+    ).toBeVisible();
+  });
+
+  it("saves and restores a custom water interval", async () => {
+    renderPage({ ...dog, waterIntervalMinutes: 47 });
+
+    expect(
+      screen.getByRole("combobox", { name: "Drink reminder interval" }),
+    ).toHaveValue("custom");
+    expect(screen.getByRole("option", { name: "Custom" })).toBeInTheDocument();
+
+    const customInterval = screen.getByRole("spinbutton", {
+      name: "Custom interval (minutes)",
+    });
+    expect(customInterval).toHaveValue(47);
+    expect(customInterval).toHaveAttribute("min", "15");
+    expect(customInterval).toHaveAttribute("max", "1440");
+
+    fireEvent.change(customInterval, { target: { value: "75" } });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Save water tracking" }),
+    );
+
+    await waitFor(() =>
+      expect(convex.setWaterTracking).toHaveBeenCalledWith({
+        dogId,
+        intervalMinutes: 75,
+      }),
+    );
   });
 
   it("shows the current account and persists an immediate locked language switch", async () => {

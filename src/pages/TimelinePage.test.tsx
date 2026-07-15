@@ -219,6 +219,7 @@ describe("TimelinePage", () => {
       "pee",
       "poop",
       "meal",
+      "water",
       "treat",
       "wake",
       "sleep",

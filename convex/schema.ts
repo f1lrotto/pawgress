@@ -20,6 +20,7 @@ export default defineSchema({
     breed: v.optional(v.string()),
     sex: v.optional(v.string()),
     timezone: v.string(),
+    waterIntervalMinutes: v.optional(v.number()),
     createdBy: v.id("users"),
   }),
   dogMembers: defineTable({
@@ -100,6 +101,7 @@ export default defineSchema({
       v.literal("pee"),
       v.literal("poop"),
       v.literal("meal"),
+      v.literal("water"),
       v.literal("treat"),
       v.literal("wake"),
       v.literal("sleep"),

@@ -34,6 +34,25 @@ const settings = {
     saved: "Jazyk bol uložený.",
     error: "Jazyk sa nepodarilo uložiť. Obnovili sme predchádzajúci jazyk.",
   },
+  water: {
+    title: "Sledovanie vody",
+    description:
+      "Zaznamenávajte každé napitie pre {{dogName}} a sledujte odpočet do ďalšieho napitia.",
+    form: "Nastavenia sledovania vody",
+    enable: "Sledovať vodu pre {{dogName}}",
+    interval: "Interval pripomenutia napitia",
+    custom: "Vlastný",
+    customInterval: "Vlastný interval (minúty)",
+    customHelp: "Zadajte celé číslo od 15 do 1 440 minút.",
+    intervalHelp:
+      "Odpočet sa reštartuje vždy, keď niekto zaznamená, že sa pes napil.",
+    save: "Uložiť sledovanie vody",
+    saving: "Ukladanie sledovania vody…",
+    saved: "Sledovanie vody bolo aktualizované.",
+    disabled:
+      "Sledovanie vody bolo vypnuté. Existujúca história napití zostáva dostupná.",
+    error: "Sledovanie vody sa nepodarilo uložiť. Skúste to znova.",
+  },
   install: {
     title: "Nainštalovať Pawgress",
     description:

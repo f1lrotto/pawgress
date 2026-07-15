@@ -23,6 +23,7 @@ const timeline = {
     sleep: "Fell asleep",
     training: "Training",
     treat: "Treat",
+    water: "Drank water",
     wake: "Woke up",
     walk: "Walk",
   },

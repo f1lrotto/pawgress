@@ -27,6 +27,7 @@ const convex = vi.hoisted(() => ({
     poop: null,
     sleep: null,
     treat: null,
+    water: null,
     wake: null,
     walk: null,
   } as Record<string, unknown> | undefined,
@@ -41,6 +42,7 @@ const convex = vi.hoisted(() => ({
   trainingDay: [] as unknown[] | undefined,
   trainingLog: vi.fn(),
   update: vi.fn(),
+  waterCount: 0 as number | undefined,
   walkEnd: vi.fn(),
   walkStart: vi.fn(),
 }));
@@ -64,6 +66,7 @@ vi.mock("convex/react", () => ({
     if (name === "activityTypes:list") return convex.activityTypes;
     if (name === "agenda:get") return convex.agenda;
     if (name === "events:latestByKind") return convex.latest;
+    if (name === "events:waterCount") return convex.waterCount;
     if (name === "walks:active") return convex.activeWalk;
     if (name === "training:list") return convex.trainingCommands;
     if (name === "training:listDay") return convex.trainingDay;
@@ -80,6 +83,7 @@ const dog = {
   name: "Milo",
   timezone: "UTC",
 };
+const waterDog = { ...dog, waterIntervalMinutes: 120 };
 const render = (ui: ReactNode) =>
   testingLibraryRender(ui, { wrapper: MemoryRouter });
 const getSummaryItem = (label: string) =>
@@ -143,6 +147,7 @@ beforeEach(() => {
     poop: null,
     sleep: null,
     treat: null,
+    water: null,
     wake: null,
     walk: null,
   };
@@ -163,6 +168,7 @@ beforeEach(() => {
   convex.trainingLog.mockResolvedValue(["session-id"]);
   convex.update.mockReset();
   convex.update.mockResolvedValue(null);
+  convex.waterCount = 0;
   convex.walkEnd.mockReset();
   convex.walkEnd.mockResolvedValue(Date.now());
   convex.walkStart.mockReset();
@@ -591,6 +597,75 @@ describe("DashboardPage quick logging", () => {
       );
     },
   );
+
+  it("shows today's water count and reset countdown only when enabled", () => {
+    vi.useFakeTimers();
+    const now = Date.parse("2026-07-09T12:00:00Z");
+    vi.setSystemTime(now);
+
+    const disabled = render(<DashboardPage dog={dog} />);
+    act(() => vi.advanceTimersByTime(0));
+    expect(
+      screen.queryByRole("button", { name: "Log Drank water" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("region", { name: "Water today" }),
+    ).not.toBeInTheDocument();
+    disabled.unmount();
+
+    convex.waterCount = 3;
+    convex.latest = {
+      meal: null,
+      pee: null,
+      poop: null,
+      sleep: null,
+      treat: null,
+      wake: null,
+      walk: null,
+      water: { at: now - 30 * 60_000 },
+    };
+    render(<DashboardPage dog={waterDog} />);
+    act(() => vi.advanceTimersByTime(0));
+
+    const water = screen.getByRole("region", { name: "Water today" });
+    expect(
+      within(getSummaryItem("Drinks logged today")).getByText("3×"),
+    ).toBeInTheDocument();
+    expect(
+      within(getSummaryItem("Drink again")).getByText("1h 30m"),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("region", { name: "Right now" }).querySelectorAll("dt"),
+    ).toHaveLength(6);
+    expect(water).toContainElement(getSummaryItem("Drinks logged today"));
+    expect(convex.queryCalls).toContainEqual({
+      name: "events:waterCount",
+      args: {
+        dogId,
+        startAt: Date.parse("2026-07-09T00:00:00Z"),
+        endAt: Date.parse("2026-07-10T00:00:00Z"),
+      },
+    });
+  });
+
+  it("logs current and backdated water when tracking is enabled", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(123_456);
+    render(<DashboardPage dog={waterDog} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Log Drank water" }));
+    await waitFor(() =>
+      expect(convex.log).toHaveBeenCalledWith({
+        at: 123_456,
+        dogId,
+        kind: "water",
+      }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Log with details" }));
+    expect(
+      screen.getByRole("option", { name: "Drank water" }),
+    ).toBeInTheDocument();
+  });
 
   it("logs quick activities at a selected earlier time", async () => {
     vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-07-09T12:00:00Z"));

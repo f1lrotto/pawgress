@@ -28,7 +28,7 @@ import {
   parseZonedDateTimeLocal,
 } from "@/lib/zonedDateTime";
 
-type QuickKind = "pee" | "poop" | "meal" | "treat" | "wake" | "sleep";
+type QuickKind = "pee" | "poop" | "meal" | "water" | "treat" | "wake" | "sleep";
 type PeePlace = "inside" | "outside";
 type PendingOperation =
   | QuickKind
@@ -53,7 +53,10 @@ type ActivityTypesById = ReadonlyMap<
   ActivityTypes[number]
 >;
 type SleepState = ReturnType<typeof deriveSleepState>;
-type DashboardDog = Pick<Doc<"dogs">, "_id" | "birthday" | "name" | "timezone">;
+type DashboardDog = Pick<
+  Doc<"dogs">,
+  "_id" | "birthday" | "name" | "timezone" | "waterIntervalMinutes"
+>;
 type BackdateState = {
   amount: string;
   attachToWalk: boolean;
@@ -136,6 +139,7 @@ const quickActions = [
   { kind: "pee", icon: "💧" },
   { kind: "poop", icon: "💩" },
   { kind: "meal", icon: "🍽️" },
+  { kind: "water", icon: "🚰" },
   { kind: "treat", icon: "🦴" },
   { kind: "wake", icon: "☀️" },
   { kind: "sleep", icon: "😴" },
@@ -143,6 +147,7 @@ const quickActions = [
   kind: QuickKind;
   icon: string;
 }>;
+const defaultQuickActions = quickActions.filter(({ kind }) => kind !== "water");
 const quickTimePresets = [5, 15, 30] as const;
 
 const walkFieldClassName = "field-control mt-2 w-full";
@@ -321,6 +326,59 @@ function RightNowSummary({
             </ul>
           )}
         </div>
+      </div>
+    </section>
+  );
+}
+
+function WaterTodaySummary({
+  count,
+  nextDrink,
+}: {
+  count: string | undefined;
+  nextDrink: string | undefined;
+}) {
+  const { t } = useTranslation("dashboard");
+  const isLoading = count === undefined || nextDrink === undefined;
+  return (
+    <section aria-labelledby="water-today-title" className="pb-6">
+      <div className="overflow-hidden rounded-xl border border-border bg-card">
+        <div className="flex items-center gap-3 border-b border-border bg-secondary/60 px-5 py-4">
+          <span aria-hidden="true" className="text-xl">
+            🚰
+          </span>
+          <h2
+            id="water-today-title"
+            className="text-xl font-bold leading-[1.625rem]"
+          >
+            {t("waterToday.title")}
+          </h2>
+        </div>
+        {isLoading && (
+          <span role="status" className="sr-only">
+            {t("waterToday.loading")}
+          </span>
+        )}
+        <dl className="grid grid-cols-2 gap-px bg-border">
+          {[
+            { label: t("waterToday.drinks"), value: count && `${count}×` },
+            { label: t("timers.nextWater"), value: nextDrink },
+          ].map(({ label, value }) => (
+            <div key={label} className="min-w-0 bg-card px-5 py-5">
+              <dt className="text-sm font-medium text-muted-foreground">
+                {label}
+              </dt>
+              <dd className="mt-2 text-2xl font-bold tabular-nums">
+                {value ?? (
+                  <span
+                    aria-hidden="true"
+                    className="block h-7 w-20 animate-pulse rounded bg-muted motion-reduce:animate-none"
+                  />
+                )}
+              </dd>
+            </div>
+          ))}
+        </dl>
       </div>
     </section>
   );
@@ -1108,6 +1166,8 @@ function BackdateForm({
     activeWalk !== undefined &&
     parsedAt !== null &&
     parsedAt < activeWalk.at;
+  const availableQuickActions =
+    dog.waterIntervalMinutes === undefined ? defaultQuickActions : quickActions;
 
   const clear = () => updateForm(initialBackdateState);
 
@@ -1258,7 +1318,7 @@ function BackdateForm({
                 });
               }}
             >
-              {quickActions.map(({ kind }) => (
+              {availableQuickActions.map(({ kind }) => (
                 <option key={kind} value={kind}>
                   {t(`events.${kind}`)}
                 </option>
@@ -1541,6 +1601,8 @@ function QuickLogSection({
   const [earlierAt, setEarlierAt] = useState<number | null>(null);
   const isBusy = pendingOperation !== null;
   const activeWalkKey = activeWalk?._id ?? "no-active-walk";
+  const availableQuickActions =
+    dog.waterIntervalMinutes === undefined ? defaultQuickActions : quickActions;
   const log = (action: EarlierAction) => {
     if (!isEarlier) {
       onLog(action.kind, action.label, getCurrentTime(), action.peePlace);
@@ -1608,9 +1670,9 @@ function QuickLogSection({
       <div
         role="group"
         aria-labelledby="quick-log-title"
-        className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-4 lg:grid-cols-8"
+        className={`mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-4 ${dog.waterIntervalMinutes === undefined ? "lg:grid-cols-8" : "lg:grid-cols-9"}`}
       >
-        {quickActions.map(({ icon, kind }) => {
+        {availableQuickActions.map(({ icon, kind }) => {
           const label = t(`events.${kind}`);
           const latestEvent = latest?.[kind];
           const isPottyAction = isPottyKind(kind);
@@ -3037,6 +3099,16 @@ function DashboardPage({ dog }: { dog: DashboardDog }) {
   const dayWindow = dayKeys
     ? getZonedDayWindow(dayKeys.today, dog.timezone)
     : null;
+  const waterToday = useQuery(
+    api.events.waterCount,
+    dog.waterIntervalMinutes !== undefined && dayWindow
+      ? {
+          dogId: dog._id,
+          startAt: dayWindow.startAt,
+          endAt: dayWindow.endAt,
+        }
+      : "skip",
+  );
   const trainingDay = useQuery(
     api.training.listDay,
     dayWindow
@@ -3099,6 +3171,19 @@ function DashboardPage({ dog }: { dog: DashboardDog }) {
     now === null || routines === undefined
       ? undefined
       : getNextMealCountdown(now, dog.timezone, routines);
+  const nextWater =
+    dog.waterIntervalMinutes === undefined ||
+    now === null ||
+    latest === undefined
+      ? undefined
+      : latest.water === null
+        ? t("timers.noWater")
+        : latest.water.at + dog.waterIntervalMinutes * 60_000 <= now
+          ? t("timers.waterDue")
+          : formatElapsed(
+              latest.water.at + dog.waterIntervalMinutes * 60_000 - now,
+              locale,
+            );
   const sleepState = latest
     ? deriveSleepState(latest.wake, latest.sleep)
     : undefined;
@@ -3281,6 +3366,17 @@ function DashboardPage({ dog }: { dog: DashboardDog }) {
         items={rightNowItems}
         training={trainingToday}
       />
+
+      {dog.waterIntervalMinutes !== undefined && (
+        <WaterTodaySummary
+          count={
+            waterToday === undefined
+              ? undefined
+              : formatNumber(waterToday, locale)
+          }
+          nextDrink={nextWater}
+        />
+      )}
 
       <AgendaSummary agenda={agenda} />
 

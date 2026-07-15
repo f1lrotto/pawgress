@@ -32,6 +32,25 @@ const settings = {
     error:
       "We couldn't save your language. Your previous language has been restored.",
   },
+  water: {
+    title: "Water tracking",
+    description:
+      "Track each time {{dogName}} drinks and keep a live countdown to the next drink.",
+    form: "Water tracking settings",
+    enable: "Track water for {{dogName}}",
+    interval: "Drink reminder interval",
+    custom: "Custom",
+    customInterval: "Custom interval (minutes)",
+    customHelp: "Enter a whole number from 15 to 1440 minutes.",
+    intervalHelp:
+      "The countdown restarts whenever someone logs that your dog drank.",
+    save: "Save water tracking",
+    saving: "Saving water tracking…",
+    saved: "Water tracking updated.",
+    disabled:
+      "Water tracking turned off. Existing drink history is still available.",
+    error: "We couldn't save water tracking. Try again.",
+  },
   install: {
     title: "Install Pawgress",
     description:

@@ -13,6 +13,7 @@ const eventKind = v.union(
   v.literal("pee"),
   v.literal("poop"),
   v.literal("meal"),
+  v.literal("water"),
   v.literal("treat"),
   v.literal("wake"),
   v.literal("sleep"),
@@ -38,7 +39,7 @@ export const list = dogQuery({
     if (
       kinds !== undefined &&
       (kinds.length === 0 ||
-        kinds.length > 9 ||
+        kinds.length > 10 ||
         new Set(kinds).size !== kinds.length)
     ) {
       throw new ConvexError("INVALID_EVENT_KINDS");
