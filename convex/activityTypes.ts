@@ -1,13 +1,14 @@
 import { ConvexError, v } from "convex/values";
 
 import type { Id } from "./_generated/dataModel";
-import type { MutationCtx } from "./_generated/server";
+import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { dogMutation, dogQuery } from "./lib/functions";
 import { normalizeNote, requireDog, validateDogTimestamp } from "./lib/events";
 
 const maxActivityTypes = 100;
 const maxEmojiLength = 16;
 const maxNameLength = 64;
+const maxWindowMs = 27 * 60 * 60 * 1_000;
 
 const activityType = v.object({
   _id: v.id("activityTypes"),
@@ -16,6 +17,11 @@ const activityType = v.object({
   name: v.string(),
   emoji: v.optional(v.string()),
   isArchived: v.boolean(),
+});
+
+const dayActivity = v.object({
+  activityTypeId: v.id("activityTypes"),
+  activityName: v.string(),
 });
 
 const normalizeName = (name: string) => {
@@ -44,7 +50,7 @@ const validateLimit = (limit: number) => {
 };
 
 const requireActivityType = async (
-  ctx: MutationCtx,
+  ctx: MutationCtx | QueryCtx,
   dogId: Id<"dogs">,
   activityTypeId: Id<"activityTypes">,
 ) => {
@@ -70,6 +76,45 @@ export const list = dogQuery({
         ? query
         : query.filter((q) => q.eq(q.field("isArchived"), false))
     ).take(validateLimit(limit));
+  },
+});
+
+export const listDay = dogQuery({
+  args: {
+    startAt: v.number(),
+    endAt: v.number(),
+  },
+  returns: v.array(dayActivity),
+  handler: async (ctx, { dogId, startAt, endAt }) => {
+    if (
+      !Number.isFinite(startAt) ||
+      !Number.isFinite(endAt) ||
+      startAt < 0 ||
+      startAt >= endAt ||
+      endAt - startAt > maxWindowMs
+    ) {
+      throw new ConvexError("INVALID_ENRICHMENT_WINDOW");
+    }
+    const events = await ctx.db
+      .query("events")
+      .withIndex("by_dog_kind_at", (q) =>
+        q
+          .eq("dogId", dogId)
+          .eq("kind", "play")
+          .gte("at", startAt)
+          .lt("at", endAt),
+      )
+      .order("desc")
+      .collect();
+    return Promise.all(
+      events.map(async ({ activityTypeId }) => {
+        if (activityTypeId === undefined) {
+          throw new ConvexError("ACTIVITY_TYPE_NOT_FOUND");
+        }
+        const type = await requireActivityType(ctx, dogId, activityTypeId);
+        return { activityTypeId, activityName: type.name };
+      }),
+    );
   },
 });
 

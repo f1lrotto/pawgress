@@ -59,6 +59,11 @@ const dashboard = {
     noTraining: "No commands trained yet today.",
     trainingCount: "{{name}}: {{count}} today",
     viewTraining: "View training",
+    enrichmentToday: "Enrichment activities today",
+    enrichmentLoading: "Loading today’s enrichment…",
+    noEnrichment: "No enrichment activities yet today.",
+    enrichmentCount: "{{name}}: {{count}} today",
+    viewEnrichment: "View enrichment",
   },
   waterToday: {
     title: "Water today",

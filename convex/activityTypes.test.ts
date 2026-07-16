@@ -105,6 +105,39 @@ test("lists a bounded authorized active picker with optional archives", async ()
   ).resolves.toHaveLength(1);
 });
 
+test("lists a local-day enrichment window with activity names", async () => {
+  const { activeId, dogId, owner } = await setup();
+  const sniffId = await owner.mutation(api.activityTypes.create, {
+    dogId,
+    name: "Sniffing",
+  });
+  await owner.mutation(api.activityTypes.logPlays, {
+    dogId,
+    activityTypeIds: [activeId, sniffId],
+    at: validAt,
+  });
+
+  await expect(
+    owner.query(api.activityTypes.listDay, {
+      dogId,
+      startAt: validAt,
+      endAt: validAt + 1,
+    }),
+  ).resolves.toEqual(
+    expect.arrayContaining([
+      { activityTypeId: activeId, activityName: "Tug" },
+      { activityTypeId: sniffId, activityName: "Sniffing" },
+    ]),
+  );
+  await expect(
+    owner.query(api.activityTypes.listDay, {
+      dogId,
+      startAt: validAt,
+      endAt: validAt,
+    }),
+  ).rejects.toThrow("INVALID_ENRICHMENT_WINDOW");
+});
+
 test("creates, logs, archives, and restores a custom Cafe visit", async () => {
   const { dogId, member, owner, t } = await setup();
   const activityTypeId = await member.mutation(api.activityTypes.create, {

@@ -21,6 +21,7 @@ const convex = vi.hoisted(() => ({
   activityTypes: [] as unknown[] | undefined,
   agenda: null as unknown,
   diaryUpdate: vi.fn(),
+  enrichmentDay: [] as unknown[] | undefined,
   latest: {
     meal: null,
     pee: null,
@@ -64,6 +65,7 @@ vi.mock("convex/react", () => ({
     convex.queryCalls.push({ name, args });
     if (name === "events:listRecent") return convex.recent;
     if (name === "activityTypes:list") return convex.activityTypes;
+    if (name === "activityTypes:listDay") return convex.enrichmentDay;
     if (name === "agenda:get") return convex.agenda;
     if (name === "events:latestByKind") return convex.latest;
     if (name === "events:waterCount") return convex.waterCount;
@@ -151,6 +153,7 @@ beforeEach(() => {
     wake: null,
     walk: null,
   };
+  convex.enrichmentDay = [];
   convex.log.mockReset();
   convex.log.mockResolvedValue("event-id");
   convex.playsLog.mockReset();
@@ -2968,6 +2971,45 @@ describe("DashboardPage timers", () => {
     ).toHaveAttribute("href", "/training");
     expect(convex.queryCalls).toContainEqual({
       name: "training:listDay",
+      args: {
+        dogId,
+        startAt: Date.parse("2026-07-09T00:00:00Z"),
+        endAt: Date.parse("2026-07-10T00:00:00Z"),
+      },
+    });
+  });
+
+  it("counts today’s enrichment by activity", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.parse("2026-07-09T12:00:00Z"));
+    convex.enrichmentDay = [
+      { activityTypeId: tugId, activityName: "Tug" },
+      { activityTypeId: "snuffle-id", activityName: "Snuffle mat" },
+      { activityTypeId: tugId, activityName: "Tug" },
+    ];
+
+    render(<DashboardPage dog={dog} />);
+    act(() => vi.advanceTimersByTime(0));
+
+    const summary = screen.getByRole("region", { name: "Right now" });
+    const tugCount = within(summary).getByLabelText("Tug: 2 today");
+    const snuffleCount = within(summary).getByLabelText("Snuffle mat: 1 today");
+    expect(
+      within(summary).getByText("Enrichment activities today"),
+    ).toBeVisible();
+    expect(tugCount).toHaveTextContent("2×");
+    expect(snuffleCount).toHaveTextContent("1×");
+    expect(tugCount.closest("li")?.querySelector("[style]")).toHaveStyle({
+      transform: "scaleX(1)",
+    });
+    expect(snuffleCount.closest("li")?.querySelector("[style]")).toHaveStyle({
+      transform: "scaleX(0.5)",
+    });
+    expect(
+      within(summary).getByRole("link", { name: "View enrichment" }),
+    ).toHaveAttribute("href", "/enrichment");
+    expect(convex.queryCalls).toContainEqual({
+      name: "activityTypes:listDay",
       args: {
         dogId,
         startAt: Date.parse("2026-07-09T00:00:00Z"),

@@ -63,6 +63,11 @@ const dashboard = {
     noTraining: "Dnes zatiaľ nebol trénovaný žiadny povel.",
     trainingCount: "{{name}}: dnes {{count}}×",
     viewTraining: "Zobraziť tréning",
+    enrichmentToday: "Dnešné aktivity obohatenia",
+    enrichmentLoading: "Načítavame dnešné obohatenie…",
+    noEnrichment: "Dnes zatiaľ nebola zaznamenaná žiadna aktivita obohatenia.",
+    enrichmentCount: "{{name}}: dnes {{count}}×",
+    viewEnrichment: "Zobraziť obohatenie",
   },
   waterToday: {
     title: "Voda dnes",

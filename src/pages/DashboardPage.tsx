@@ -45,7 +45,9 @@ type RecentEvent = RecentEvents[number];
 type ActivityTypes = FunctionReturnType<typeof api.activityTypes.list>;
 type AgendaDay = FunctionReturnType<typeof api.agenda.get>;
 type TrainingCommands = FunctionReturnType<typeof api.training.list>;
-type TrainingDay = FunctionReturnType<typeof api.training.listDay>;
+type TodayActivities =
+  | Array<{ count: number; displayCount: string; id: string; name: string }>
+  | undefined;
 const countCompleted = (goals: ReadonlyArray<{ done: boolean }>) =>
   goals.filter(({ done }) => done).length;
 type ActivityTypesById = ReadonlyMap<
@@ -211,22 +213,91 @@ const hasErrorCode = (error: unknown, code: string) =>
     "data" in error &&
     error.data === code);
 
+function TodayActivitySummary({
+  countLabel,
+  emptyText,
+  items,
+  linkText,
+  loadingText,
+  title,
+  to,
+}: {
+  countLabel: (name: string, count: number) => string;
+  emptyText: string;
+  items: TodayActivities;
+  linkText: string;
+  loadingText: string;
+  title: string;
+  to: string;
+}) {
+  const maxCount = Math.max(1, ...(items?.map(({ count }) => count) ?? []));
+  return (
+    <div className="border-t border-border bg-secondary/60 px-4 py-4">
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+        <h3 className="text-balance text-sm font-semibold">{title}</h3>
+        <Link
+          to={to}
+          className="-my-2 inline-flex min-h-11 items-center text-sm font-semibold text-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        >
+          {linkText}
+        </Link>
+      </div>
+      {items === undefined ? (
+        <div className="mt-3">
+          <span role="status" className="sr-only">
+            {loadingText}
+          </span>
+          <span
+            aria-hidden="true"
+            className="block h-5 w-48 animate-pulse rounded bg-muted motion-reduce:animate-none"
+          />
+        </div>
+      ) : items.length === 0 ? (
+        <p className="mt-1 text-sm text-muted-foreground">{emptyText}</p>
+      ) : (
+        <ul className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(min(8rem,100%),1fr))] gap-x-6 gap-y-4">
+          {items.map(({ count, displayCount, id, name }) => (
+            <li key={id} className="min-w-0">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="min-w-0 break-words text-sm font-medium [overflow-wrap:anywhere]">
+                  {name}
+                </span>
+                <span
+                  aria-label={countLabel(name, count)}
+                  className="shrink-0 text-lg font-bold tabular-nums text-primary"
+                >
+                  {displayCount}×
+                </span>
+              </div>
+              <div
+                aria-hidden="true"
+                className="relative mt-2 h-1.5 overflow-hidden rounded-full bg-muted"
+              >
+                <span
+                  className="absolute inset-0 origin-left rounded-full bg-primary transition-transform duration-200 ease-out motion-reduce:transition-none"
+                  style={{ transform: `scaleX(${count / maxCount})` }}
+                />
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function RightNowSummary({
+  enrichment,
   isLoading,
   items,
   training,
 }: {
+  enrichment: TodayActivities;
   isLoading: boolean;
   items: Array<{ detail?: string; label: string; value: string }>;
-  training:
-    | Array<{ count: number; displayCount: string; id: string; name: string }>
-    | undefined;
+  training: TodayActivities;
 }) {
   const { t } = useTranslation("dashboard");
-  const maxTrainingCount = Math.max(
-    1,
-    ...(training?.map(({ count }) => count) ?? []),
-  );
   return (
     <section aria-labelledby="timers-title" className="pb-6">
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
@@ -269,63 +340,28 @@ function RightNowSummary({
             </div>
           ))}
         </dl>
-        <div className="border-t border-border bg-secondary/60 px-4 py-4">
-          <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
-            <h3 className="text-balance text-sm font-semibold">
-              {t("timers.trainingToday")}
-            </h3>
-            <Link
-              to="/training"
-              className="-my-2 inline-flex min-h-11 items-center text-sm font-semibold text-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-            >
-              {t("timers.viewTraining")}
-            </Link>
-          </div>
-          {training === undefined ? (
-            <div className="mt-3">
-              <span role="status" className="sr-only">
-                {t("timers.trainingLoading")}
-              </span>
-              <span
-                aria-hidden="true"
-                className="block h-5 w-48 animate-pulse rounded bg-muted motion-reduce:animate-none"
-              />
-            </div>
-          ) : training.length === 0 ? (
-            <p className="mt-1 text-sm text-muted-foreground">
-              {t("timers.noTraining")}
-            </p>
-          ) : (
-            <ul className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(min(8rem,100%),1fr))] gap-x-6 gap-y-4">
-              {training.map(({ count, displayCount, id, name }) => (
-                <li key={id} className="min-w-0">
-                  <div className="flex items-baseline justify-between gap-3">
-                    <span className="min-w-0 break-words text-sm font-medium [overflow-wrap:anywhere]">
-                      {name}
-                    </span>
-                    <span
-                      aria-label={t("timers.trainingCount", { count, name })}
-                      className="shrink-0 text-lg font-bold tabular-nums text-primary"
-                    >
-                      {displayCount}×
-                    </span>
-                  </div>
-                  <div
-                    aria-hidden="true"
-                    className="relative mt-2 h-1.5 overflow-hidden rounded-full bg-muted"
-                  >
-                    <span
-                      className="absolute inset-0 origin-left rounded-full bg-primary transition-transform duration-200 ease-out motion-reduce:transition-none"
-                      style={{
-                        transform: `scaleX(${count / maxTrainingCount})`,
-                      }}
-                    />
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
+        <TodayActivitySummary
+          countLabel={(name, count) =>
+            t("timers.trainingCount", { count, name })
+          }
+          emptyText={t("timers.noTraining")}
+          items={training}
+          linkText={t("timers.viewTraining")}
+          loadingText={t("timers.trainingLoading")}
+          title={t("timers.trainingToday")}
+          to="/training"
+        />
+        <TodayActivitySummary
+          countLabel={(name, count) =>
+            t("timers.enrichmentCount", { count, name })
+          }
+          emptyText={t("timers.noEnrichment")}
+          items={enrichment}
+          linkText={t("timers.viewEnrichment")}
+          loadingText={t("timers.enrichmentLoading")}
+          title={t("timers.enrichmentToday")}
+          to="/enrichment"
+        />
       </div>
     </section>
   );
@@ -384,14 +420,19 @@ function WaterTodaySummary({
   );
 }
 
-const countTraining = (sessions: TrainingDay, locale: string) =>
+const countActivities = <Item,>(
+  items: ReadonlyArray<Item>,
+  getActivity: (item: Item) => { id: string; name: string },
+  locale: string,
+) =>
   Array.from(
-    sessions.reduce((counts, { commandId, commandName }) => {
-      const current = counts.get(commandId);
-      counts.set(commandId, {
+    items.reduce((counts, item) => {
+      const { id, name } = getActivity(item);
+      const current = counts.get(id);
+      counts.set(id, {
         count: (current?.count ?? 0) + 1,
-        id: commandId,
-        name: commandName,
+        id,
+        name,
       });
       return counts;
     }, new Map<string, { count: number; id: string; name: string }>()),
@@ -3119,6 +3160,16 @@ function DashboardPage({ dog }: { dog: DashboardDog }) {
         }
       : "skip",
   );
+  const enrichmentDay = useQuery(
+    api.activityTypes.listDay,
+    dayWindow
+      ? {
+          dogId: dog._id,
+          startAt: dayWindow.startAt,
+          endAt: dayWindow.endAt,
+        }
+      : "skip",
+  );
   const agenda = useQuery(
     api.agenda.get,
     dayKeys ? { dogId: dog._id, date: dayKeys.today } : "skip",
@@ -3236,11 +3287,29 @@ function DashboardPage({ dog }: { dog: DashboardDog }) {
     () =>
       trainingDay?.length === undefined
         ? undefined
-        : countTraining(trainingDay, locale).map((item) => ({
+        : countActivities(
+            trainingDay,
+            ({ commandId: id, commandName: name }) => ({ id, name }),
+            locale,
+          ).map((item) => ({
             ...item,
             displayCount: formatNumber(item.count, locale),
           })),
     [locale, trainingDay],
+  );
+  const enrichmentToday = useMemo(
+    () =>
+      enrichmentDay?.length === undefined
+        ? undefined
+        : countActivities(
+            enrichmentDay,
+            ({ activityTypeId: id, activityName: name }) => ({ id, name }),
+            locale,
+          ).map((item) => ({
+            ...item,
+            displayCount: formatNumber(item.count, locale),
+          })),
+    [enrichmentDay, locale],
   );
 
   const beginOperation = (operation: Exclude<PendingOperation, null>) => {
@@ -3362,6 +3431,7 @@ function DashboardPage({ dog }: { dog: DashboardDog }) {
       </section>
 
       <RightNowSummary
+        enrichment={enrichmentToday}
         isLoading={latest === undefined || routines === undefined}
         items={rightNowItems}
         training={trainingToday}
