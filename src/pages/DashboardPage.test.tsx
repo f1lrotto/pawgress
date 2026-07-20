@@ -21,6 +21,7 @@ const convex = vi.hoisted(() => ({
   activityTypes: [] as unknown[] | undefined,
   agenda: null as unknown,
   diaryUpdate: vi.fn(),
+  createWithPotty: vi.fn(),
   enrichmentDay: [] as unknown[] | undefined,
   latest: {
     meal: null,
@@ -38,6 +39,7 @@ const convex = vi.hoisted(() => ({
   queryCalls: [] as Array<{ name: string; args: unknown }>,
   recent: [] as unknown[] | undefined,
   remove: vi.fn(),
+  undoReconstruction: vi.fn(),
   routines: [] as unknown[] | undefined,
   trainingCommands: [] as unknown[] | undefined,
   trainingDay: [] as unknown[] | undefined,
@@ -54,6 +56,8 @@ vi.mock("convex/react", () => ({
     if (name === "events:logQuick") return convex.log;
     if (name === "activityTypes:logPlays") return convex.playsLog;
     if (name === "walks:logPotty") return convex.pottyLog;
+    if (name === "walks:createWithPotty") return convex.createWithPotty;
+    if (name === "walks:undoReconstruction") return convex.undoReconstruction;
     if (name === "walks:updateDiary") return convex.diaryUpdate;
     if (name === "walks:start") return convex.walkStart;
     if (name === "walks:end") return convex.walkEnd;
@@ -90,6 +94,10 @@ const render = (ui: ReactNode) =>
   testingLibraryRender(ui, { wrapper: MemoryRouter });
 const getSummaryItem = (label: string) =>
   screen.getByText(label, { selector: "dt" }).parentElement!;
+const logStandalone = (label: "Pee" | "Poop") => {
+  fireEvent.click(screen.getByRole("button", { name: `Log ${label}` }));
+  fireEvent.click(screen.getByRole("button", { name: "No" }));
+};
 const mealEvent = (overrides: Record<string, unknown> = {}) => ({
   _creationTime: Date.parse("2026-07-09T07:30:00Z"),
   _id: "meal-id",
@@ -143,6 +151,11 @@ beforeEach(() => {
   convex.agenda = null;
   convex.diaryUpdate.mockReset();
   convex.diaryUpdate.mockResolvedValue(null);
+  convex.createWithPotty.mockReset();
+  convex.createWithPotty.mockResolvedValue({
+    eventId: "potty-id",
+    walkId: "walk-id",
+  });
   convex.latest = {
     meal: null,
     pee: null,
@@ -164,6 +177,8 @@ beforeEach(() => {
   convex.recent = [];
   convex.remove.mockReset();
   convex.remove.mockResolvedValue(null);
+  convex.undoReconstruction.mockReset();
+  convex.undoReconstruction.mockResolvedValue(null);
   convex.routines = [];
   convex.trainingCommands = [];
   convex.trainingDay = [];
@@ -176,6 +191,13 @@ beforeEach(() => {
   convex.walkEnd.mockResolvedValue(Date.now());
   convex.walkStart.mockReset();
   convex.walkStart.mockResolvedValue("walk-id");
+  HTMLDialogElement.prototype.showModal = function () {
+    this.open = true;
+  };
+  HTMLDialogElement.prototype.close = function () {
+    this.open = false;
+    this.dispatchEvent(new Event("close"));
+  };
 });
 
 describe("DashboardPage quick logging", () => {
@@ -253,7 +275,6 @@ describe("DashboardPage quick logging", () => {
       "aria-describedby",
       "training-rating-error",
     );
-    expect(firstUnrated).toHaveAttribute("aria-invalid", "true");
     expect(firstUnrated.closest("label")).toHaveClass(
       "has-[:focus-visible]:outline-2",
     );
@@ -557,8 +578,11 @@ describe("DashboardPage quick logging", () => {
     expect(
       within(getSummaryItem("Od posledného jedla")).getByText("2 h 13 min"),
     ).toBeVisible();
-    expect(screen.getByText("Ate everything")).toBeVisible();
-    expect(screen.getByText(/Množstvo:/)).toHaveTextContent(
+    const recent = screen
+      .getByRole("heading", { name: "Nedávna aktivita" })
+      .closest("section")!;
+    expect(within(recent).getByText("Ate everything")).toBeVisible();
+    expect(within(recent).getByText(/Množstvo:/)).toHaveTextContent(
       "Množstvo: 1 234,5",
     );
   });
@@ -577,6 +601,9 @@ describe("DashboardPage quick logging", () => {
       render(<DashboardPage dog={dog} />);
 
       fireEvent.click(screen.getByRole("button", { name: `Log ${label}` }));
+      if (kind === "pee" || kind === "poop") {
+        fireEvent.click(screen.getByRole("button", { name: "No" }));
+      }
 
       await waitFor(() =>
         expect(convex.log).toHaveBeenCalledWith({
@@ -588,7 +615,7 @@ describe("DashboardPage quick logging", () => {
       );
       expect(convex.queryCalls).toEqual(
         expect.arrayContaining([
-          { name: "events:listRecent", args: { dogId, limit: 8 } },
+          { name: "events:listRecent", args: { dogId, limit: 100 } },
           {
             name: "activityTypes:list",
             args: { dogId, includeArchived: true, limit: 100 },
@@ -668,6 +695,113 @@ describe("DashboardPage quick logging", () => {
     expect(
       screen.getByRole("option", { name: "Drank water" }),
     ).toBeInTheDocument();
+  });
+
+  it("starts a selected walk and saves the triggering potty atomically", async () => {
+    const at = Date.parse("2026-07-09T12:00:00Z");
+    vi.spyOn(Date, "now").mockReturnValue(at);
+    render(<DashboardPage dog={dog} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Log Poop" }));
+    const dialog = screen.getByRole("dialog", { name: "Are you on a walk?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Yes" }));
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole("button", { name: "1 min ago" }),
+      ).toHaveFocus(),
+    );
+    fireEvent.click(within(dialog).getByRole("button", { name: "5 min ago" }));
+
+    await waitFor(() =>
+      expect(convex.createWithPotty).toHaveBeenCalledWith({
+        dogId,
+        kind: "poop",
+        pottyAt: at,
+        walkStartedAt: at - 5 * 60_000,
+      }),
+    );
+    expect(dialog).not.toHaveAttribute("open");
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Walk started 5 min ago and Poop logged for Milo.",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+    await waitFor(() =>
+      expect(convex.remove).toHaveBeenCalledWith({
+        dogId,
+        eventId: "potty-id",
+      }),
+    );
+    expect(convex.undoReconstruction).not.toHaveBeenCalled();
+  });
+
+  it("shows pending feedback while the walk and potty are being saved", async () => {
+    let finish!: () => void;
+    convex.createWithPotty.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = () => resolve({ eventId: "potty-id", walkId: "walk-id" });
+        }),
+    );
+    render(<DashboardPage dog={dog} />);
+    fireEvent.click(screen.getByRole("button", { name: "Log Poop" }));
+    const dialog = screen.getByRole("dialog", { name: "Are you on a walk?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Yes" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "3 min ago" }));
+
+    expect(await within(dialog).findByRole("status")).toHaveTextContent(
+      "Starting…",
+    );
+    expect(dialog).toHaveAttribute("aria-busy", "true");
+    expect(
+      within(dialog).getByRole("button", { name: "3 min ago" }),
+    ).toBeDisabled();
+    expect(
+      within(dialog).getByRole("button", { name: "Cancel" }),
+    ).toBeDisabled();
+
+    finish();
+    await waitFor(() => expect(dialog).not.toHaveAttribute("open"));
+  });
+
+  it("keeps the walk prompt open when atomic creation fails", async () => {
+    convex.createWithPotty.mockRejectedValue(
+      new Error("INVALID_WALK_INTERVAL"),
+    );
+    render(<DashboardPage dog={dog} />);
+    fireEvent.click(screen.getByRole("button", { name: "Log Poop" }));
+    const dialog = screen.getByRole("dialog", { name: "Are you on a walk?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Yes" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "15 min ago" }));
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "That start time overlaps another walk.",
+    );
+    expect(dialog).toHaveAttribute("open");
+    expect(
+      within(dialog).getByRole("button", { name: "15 min ago" }),
+    ).toBeEnabled();
+  });
+
+  it("leaves the Earlier potty flow unchanged", async () => {
+    const at = Date.parse("2026-07-09T12:00:00Z");
+    vi.spyOn(Date, "now").mockReturnValue(at);
+    render(<DashboardPage dog={dog} />);
+    fireEvent.click(screen.getByRole("button", { name: "Earlier" }));
+    fireEvent.click(screen.getByRole("button", { name: "Log Poop" }));
+
+    expect(
+      screen.queryByRole("dialog", { name: "Are you on a walk?" }),
+    ).not.toBeInTheDocument();
+    const dialog = screen.getByRole("dialog", { name: "When did it happen?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "5 min ago" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Log Poop" }));
+    await waitFor(() =>
+      expect(convex.log).toHaveBeenCalledWith({
+        at: at - 5 * 60_000,
+        dogId,
+        kind: "poop",
+      }),
+    );
   });
 
   it("logs quick activities at a selected earlier time", async () => {
@@ -798,7 +932,7 @@ describe("DashboardPage quick logging", () => {
     convex.log.mockRejectedValue(new Error("network"));
     render(<DashboardPage dog={dog} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Log Poop" }));
+    logStandalone("Poop");
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "We couldn't log “Poop”. Try again.",
@@ -809,7 +943,7 @@ describe("DashboardPage quick logging", () => {
   it("undoes the most recently created event", async () => {
     convex.log.mockResolvedValue("new-event-id");
     render(<DashboardPage dog={dog} />);
-    fireEvent.click(screen.getByRole("button", { name: "Log Pee" }));
+    logStandalone("Pee");
     await screen.findByText("Pee logged for Milo.");
 
     fireEvent.click(screen.getByRole("button", { name: "Undo" }));
@@ -837,7 +971,7 @@ describe("DashboardPage quick logging", () => {
         }),
     );
     render(<DashboardPage dog={dog} />);
-    fireEvent.click(screen.getByRole("button", { name: "Log Pee" }));
+    logStandalone("Pee");
     await screen.findByText("Pee logged for Milo.");
 
     const undo = screen.getByRole("button", { name: "Undo" });
@@ -868,7 +1002,7 @@ describe("DashboardPage quick logging", () => {
         }),
     );
     render(<DashboardPage dog={dog} />);
-    fireEvent.click(screen.getByRole("button", { name: "Log Pee" }));
+    logStandalone("Pee");
     await screen.findByText("Pee logged for Milo.");
 
     fireEvent.click(screen.getByRole("button", { name: "Log Meal" }));
@@ -1089,7 +1223,7 @@ describe("DashboardPage walk controls", () => {
         }),
     );
     render(<DashboardPage dog={dog} />);
-    fireEvent.click(screen.getByRole("button", { name: "Log Pee" }));
+    logStandalone("Pee");
     await screen.findByText("Pee logged for Milo.");
     const start = screen.getByRole("button", { name: "Start walk" });
 
@@ -1531,7 +1665,7 @@ describe("DashboardPage walk potty attachment", () => {
   it("keeps standalone potty and non-potty events on logQuick", async () => {
     vi.spyOn(Date, "now").mockReturnValue(123_000);
     const { rerender } = render(<DashboardPage dog={dog} />);
-    fireEvent.click(screen.getByRole("button", { name: "Log Pee" }));
+    logStandalone("Pee");
     await waitFor(() =>
       expect(convex.log).toHaveBeenCalledWith({
         at: 123_000,
@@ -1573,6 +1707,114 @@ describe("DashboardPage walk potty attachment", () => {
       }),
     );
     expect(convex.pottyLog).not.toHaveBeenCalled();
+  });
+
+  it("reconstructs a completed walk from preset timing and undoes the pair", async () => {
+    const now = Date.parse("2026-07-09T12:00:00Z");
+    const pottyAt = Date.parse("2026-07-09T10:00:00Z");
+    vi.spyOn(Date, "now").mockReturnValue(now);
+    render(<DashboardPage dog={dog} />);
+    fireEvent.click(screen.getByRole("button", { name: "Log with details" }));
+    fireEvent.change(screen.getByLabelText("When did it happen?"), {
+      target: { value: "2026-07-09T10:00" },
+    });
+    const reconstruct = screen.getByLabelText("This happened during a walk");
+    expect(reconstruct).toHaveAttribute(
+      "aria-describedby",
+      "backdate-reconstruct-help",
+    );
+    expect(reconstruct).toHaveAttribute(
+      "aria-controls",
+      "backdate-reconstruct-controls",
+    );
+    fireEvent.click(reconstruct);
+    const offset = screen.getByRole("group", {
+      name: "How far into the walk?",
+    });
+    const duration = screen.getByRole("group", {
+      name: "How long was the walk?",
+    });
+    fireEvent.change(within(offset).getByRole("combobox"), {
+      target: { value: "5" },
+    });
+    fireEvent.change(within(duration).getByRole("combobox"), {
+      target: { value: "30" },
+    });
+
+    const formatter = new Intl.DateTimeFormat("en", {
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: "UTC",
+    });
+    expect(screen.getByRole("status")).toHaveTextContent(
+      `Walk ${formatter.format(pottyAt - 5 * 60_000)}–${formatter.format(
+        pottyAt + 25 * 60_000,
+      )} · Pee at ${formatter.format(pottyAt)}`,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Log event" }));
+
+    await waitFor(() =>
+      expect(convex.createWithPotty).toHaveBeenCalledWith({
+        dogId,
+        kind: "pee",
+        peePlace: "outside",
+        pottyAt,
+        walkStartedAt: pottyAt - 5 * 60_000,
+        walkEndedAt: pottyAt + 25 * 60_000,
+      }),
+    );
+    expect(convex.log).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole("button", { name: "Undo" }));
+    await waitFor(() =>
+      expect(convex.undoReconstruction).toHaveBeenCalledWith({
+        dogId,
+        eventId: "potty-id",
+        walkId: "walk-id",
+      }),
+    );
+    expect(convex.remove).not.toHaveBeenCalled();
+  });
+
+  it("accepts custom reconstruction minutes and validates the interval", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-07-09T12:00:00Z"));
+    render(<DashboardPage dog={dog} />);
+    fireEvent.click(screen.getByRole("button", { name: "Log with details" }));
+    fireEvent.change(screen.getByLabelText("When did it happen?"), {
+      target: { value: "2026-07-09T10:00" },
+    });
+    fireEvent.click(screen.getByLabelText("This happened during a walk"));
+    const offset = screen.getByRole("group", {
+      name: "How far into the walk?",
+    });
+    const duration = screen.getByRole("group", {
+      name: "How long was the walk?",
+    });
+    fireEvent.change(within(offset).getByRole("combobox"), {
+      target: { value: "other" },
+    });
+    fireEvent.change(within(offset).getByRole("spinbutton"), {
+      target: { value: "15" },
+    });
+    fireEvent.change(within(duration).getByRole("combobox"), {
+      target: { value: "10" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Log event" }));
+
+    expect(
+      await within(duration).findByText(
+        "The walk must last at least until this potty event happened.",
+      ),
+    ).toBeInTheDocument();
+    expect(convex.createWithPotty).not.toHaveBeenCalled();
+
+    fireEvent.change(within(duration).getByRole("combobox"), {
+      target: { value: "other" },
+    });
+    fireEvent.change(within(duration).getByRole("spinbutton"), {
+      target: { value: "25" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Log event" }));
+    await waitFor(() => expect(convex.createWithPotty).toHaveBeenCalled());
   });
 
   it("shares the operation lock for active quick potty", async () => {
@@ -1660,7 +1902,7 @@ describe("DashboardPage walk potty attachment", () => {
     expect(convex.pottyLog).not.toHaveBeenCalled();
   });
 
-  it("disables and unchecks attachment before the walk start", async () => {
+  it("offers reconstruction before the active walk and stays standalone by default", async () => {
     const walk = walkEvent({ at: Date.parse("2026-07-09T10:00:00Z") });
     vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-07-09T12:00:00Z"));
     convex.activeWalk = walk;
@@ -1670,15 +1912,12 @@ describe("DashboardPage walk potty attachment", () => {
     fireEvent.change(screen.getByLabelText("When did it happen?"), {
       target: { value: "2026-07-09T09:00" },
     });
-    const attachment = screen.getByLabelText("Attach to active walk");
-
-    expect(attachment).not.toBeChecked();
-    expect(attachment).toBeDisabled();
     expect(
-      screen.getByText(
-        "This time is before the active walk started, so it will be saved as a standalone log.",
-      ),
-    ).toBeInTheDocument();
+      screen.queryByLabelText("Attach to active walk"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByLabelText("This happened during a walk"),
+    ).not.toBeChecked();
     fireEvent.click(screen.getByRole("button", { name: "Log event" }));
     await waitFor(() =>
       expect(convex.log).toHaveBeenCalledWith({
@@ -2505,7 +2744,7 @@ describe("DashboardPage backdating", () => {
         }),
     );
     render(<DashboardPage dog={dog} />);
-    fireEvent.click(screen.getByRole("button", { name: "Log Pee" }));
+    logStandalone("Pee");
     await screen.findByText("Pee logged for Milo.");
 
     fireEvent.click(screen.getByRole("button", { name: "Log with details" }));
@@ -2857,6 +3096,135 @@ describe("DashboardPage activity", () => {
       within(recent).getByRole("button", { name: /Delete 🪢 Tug/ }),
     );
     expect(within(recent).getByText("Delete the “🪢 Tug” log?")).toBeVisible();
+  });
+
+  it("queries the full overview window while keeping recent activity to eight rows", () => {
+    const at = Date.parse("2026-07-09T07:30:00Z");
+    convex.recent = Array.from({ length: 10 }, (_, index) =>
+      mealEvent({ _id: `meal-${index}`, at: at - index }),
+    );
+
+    render(<DashboardPage dog={dog} />);
+    const recent = screen
+      .getByRole("heading", { name: "Recent activity" })
+      .closest("section")!;
+
+    expect(convex.queryCalls).toContainEqual({
+      name: "events:listRecent",
+      args: { dogId, limit: 100 },
+    });
+    expect(within(recent).getAllByRole("listitem")).toHaveLength(8);
+  });
+
+  it("keeps kind and symbol as visible, non-color cues on recent rows", () => {
+    convex.activityTypes = [activityType()];
+    convex.recent = [mealEvent(), playEvent()];
+
+    render(<DashboardPage dog={dog} />);
+    const recent = screen
+      .getByRole("heading", { name: "Recent activity" })
+      .closest("section")!;
+    const mealRow = within(recent).getByText("Meal").closest("li")!;
+    const playRow = within(recent).getByText("🪢 Tug").closest("li")!;
+
+    expect(mealRow).toHaveAttribute("data-activity-kind", "meal");
+    expect(within(mealRow).getByText("◒")).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    );
+    expect(playRow).toHaveAttribute("data-activity-kind", "play");
+    expect(within(playRow).getByText("✦")).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    );
+  });
+
+  it("builds today's overview from events, grouped training, and cross-midnight sleep", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.parse("2026-07-09T12:00:00Z"));
+    const trainingAt = Date.parse("2026-07-09T10:00:00Z");
+    convex.activityTypes = [activityType()];
+    convex.recent = [
+      playEvent({
+        at: Date.parse("2026-07-09T08:00:00Z"),
+        note: "Focused tug",
+      }),
+      mealEvent({
+        _id: "wake-id",
+        amount: undefined,
+        at: Date.parse("2026-07-09T06:00:00Z"),
+        kind: "wake",
+        note: undefined,
+      }),
+      mealEvent({
+        _id: "sleep-id",
+        amount: undefined,
+        at: Date.parse("2026-07-08T23:00:00Z"),
+        kind: "sleep",
+        note: undefined,
+      }),
+      mealEvent({
+        _id: "older-wake-id",
+        amount: undefined,
+        at: Date.parse("2026-07-08T22:00:00Z"),
+        kind: "wake",
+        note: undefined,
+      }),
+      mealEvent({
+        _id: "older-treat-id",
+        amount: undefined,
+        at: Date.parse("2026-07-08T21:00:00Z"),
+        kind: "treat",
+        note: undefined,
+      }),
+    ];
+    convex.trainingDay = [
+      {
+        _id: "sit-session",
+        at: trainingAt,
+        commandId: "sit-id",
+        commandName: "Sit",
+        notes: "Morning set",
+      },
+      {
+        _id: "stay-session",
+        at: trainingAt,
+        commandId: "stay-id",
+        commandName: "Stay",
+        notes: "Morning set",
+      },
+    ];
+
+    render(<DashboardPage dog={dog} />);
+    act(() => vi.advanceTimersByTime(0));
+    const overview = screen.getByRole("region", { name: "Today so far" });
+
+    expect(
+      within(overview).getByRole("button", {
+        name: /Tug · Focused tug/,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(overview).getAllByText("Sleep & naps").length,
+    ).toBeGreaterThan(0);
+    expect(
+      within(overview).getByRole("button", {
+        name: /Training · Sit, Stay/,
+      }),
+    ).toBeInTheDocument();
+    expect(
+      overview.querySelector('[data-activity-kind="play"]'),
+    ).toBeInTheDocument();
+    expect(
+      overview.querySelector('[data-activity-kind="sleep"]'),
+    ).toBeInTheDocument();
+    expect(
+      overview.querySelector('[role="img"][data-activity-kind="sleep"]'),
+    ).toHaveAccessibleName(/Sleep & naps.*6h/);
+    expect(
+      overview.querySelector('[data-activity-kind="training"]'),
+    ).toBeInTheDocument();
+    expect(within(overview).queryByText("Treat")).not.toBeInTheDocument();
   });
 
   it("keeps recent activity in an ordered feed", () => {

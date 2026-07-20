@@ -3,6 +3,7 @@ import { ConvexError, v } from "convex/values";
 import type { Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import {
+  assertWalkInterval,
   event,
   maxWalkEvents,
   normalizeNote,
@@ -23,13 +24,6 @@ const findActiveWalk = (ctx: QueryCtx | MutationCtx, dogId: Id<"dogs">) =>
       q.eq("dogId", dogId).eq("kind", "walk").eq("endedAt", undefined),
     )
     .unique();
-
-const findLatestWalk = (ctx: MutationCtx, dogId: Id<"dogs">) =>
-  ctx.db
-    .query("events")
-    .withIndex("by_dog_kind_at", (q) => q.eq("dogId", dogId).eq("kind", "walk"))
-    .order("desc")
-    .first();
 
 const findLatestPotty = (ctx: MutationCtx, walkId: Id<"events">) =>
   ctx.db
@@ -58,10 +52,7 @@ export const start = dogMutation({
     if ((await findActiveWalk(ctx, dogId)) !== null) {
       throw new ConvexError("WALK_ALREADY_ACTIVE");
     }
-    const latestWalk = await findLatestWalk(ctx, dogId);
-    if (latestWalk?.endedAt !== undefined && timestamp < latestWalk.endedAt) {
-      throw new ConvexError("INVALID_WALK_INTERVAL");
-    }
+    await assertWalkInterval(ctx, dogId, timestamp, undefined);
     return ctx.db.insert("events", {
       dogId,
       userId: ctx.userId,
@@ -148,6 +139,98 @@ export const logPotty = dogMutation({
       walkId,
       peePlace,
     });
+  },
+});
+
+export const createWithPotty = dogMutation({
+  args: {
+    kind: pottyKind,
+    pottyAt: v.number(),
+    walkStartedAt: v.number(),
+    walkEndedAt: v.optional(v.number()),
+    note: v.optional(v.string()),
+    peePlace: v.optional(peePlace),
+  },
+  returns: v.object({
+    eventId: v.id("events"),
+    walkId: v.id("events"),
+  }),
+  handler: async (
+    ctx,
+    { dogId, kind, pottyAt, walkStartedAt, walkEndedAt, note, peePlace },
+  ) => {
+    const dog = await requireDog(ctx, dogId);
+    const eventAt = validateDogTimestamp(pottyAt, dog);
+    const startedAt = validateDogTimestamp(walkStartedAt, dog);
+    const endedAt =
+      walkEndedAt === undefined
+        ? undefined
+        : validateDogTimestamp(walkEndedAt, dog);
+    validatePeePlace(kind, peePlace);
+    if (
+      peePlace === "inside" ||
+      startedAt > eventAt ||
+      (endedAt !== undefined && (endedAt < eventAt || endedAt <= startedAt))
+    ) {
+      throw new ConvexError("INVALID_WALK_INTERVAL");
+    }
+    if (endedAt === undefined && (await findActiveWalk(ctx, dogId)) !== null) {
+      throw new ConvexError("WALK_ALREADY_ACTIVE");
+    }
+    await assertWalkInterval(ctx, dogId, startedAt, endedAt);
+
+    const walkId = await ctx.db.insert("events", {
+      dogId,
+      userId: ctx.userId,
+      kind: "walk",
+      at: startedAt,
+      endedAt,
+    });
+    const eventId = await ctx.db.insert("events", {
+      dogId,
+      userId: ctx.userId,
+      kind,
+      at: eventAt,
+      note: note === undefined ? undefined : normalizeNote(note),
+      walkId,
+      peePlace,
+    });
+    return { eventId, walkId };
+  },
+});
+
+export const undoReconstruction = dogMutation({
+  args: { eventId: v.id("events"), walkId: v.id("events") },
+  returns: v.null(),
+  handler: async (ctx, { dogId, eventId, walkId }) => {
+    const [event, walk, linkedEvents] = await Promise.all([
+      ctx.db.get("events", eventId),
+      ctx.db.get("events", walkId),
+      ctx.db
+        .query("events")
+        .withIndex("by_walk_at", (q) => q.eq("walkId", walkId))
+        .take(2),
+    ]);
+    if (event === null && walk === null) return null;
+    if (
+      event === null ||
+      walk === null ||
+      event.dogId !== dogId ||
+      walk.dogId !== dogId ||
+      walk.kind !== "walk" ||
+      walk.endedAt === undefined ||
+      (event.kind !== "pee" && event.kind !== "poop") ||
+      event.walkId !== walkId ||
+      linkedEvents.length !== 1 ||
+      linkedEvents[0]._id !== eventId
+    ) {
+      throw new ConvexError("RECONSTRUCTION_CHANGED");
+    }
+    await Promise.all([
+      ctx.db.delete("events", eventId),
+      ctx.db.delete("events", walkId),
+    ]);
+    return null;
   },
 });
 

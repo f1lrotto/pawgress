@@ -6,6 +6,13 @@ const timeline = {
   amount: "Množstvo: {{amount}}",
   boundary: "Dni sa riadia časovým pásmom {{timezone}}.",
   clearFilters: "Zrušiť filtre",
+  daySummary: {
+    activities_one: "{{formattedCount}} aktivita",
+    activities_few: "{{formattedCount}} aktivity",
+    activities_other: "{{formattedCount}} aktivít",
+    rest: "{{duration}} odpočinku",
+    walk: "{{duration}} prechádzky",
+  },
   duration: "Trvanie: {{duration}}",
   edit: "Upraviť",
   editAria: "Upraviť {{event}} o {{time}}",

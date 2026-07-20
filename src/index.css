@@ -21,6 +21,30 @@
   --palette-green-600: oklch(0.48 0.12 145);
   --palette-blue-600: oklch(0.47 0.09 230);
 
+  /* Activity visualization palette. */
+  --activity-pee-surface: oklch(0.937 0.021 182);
+  --activity-pee-ink: oklch(0.504 0.068 187);
+  --activity-poop-surface: oklch(0.909 0.021 72);
+  --activity-poop-ink: oklch(0.482 0.055 65);
+  --activity-meal-surface: oklch(0.919 0.04 79);
+  --activity-meal-ink: oklch(0.513 0.087 75);
+  --activity-water-surface: oklch(0.929 0.018 233);
+  --activity-water-ink: oklch(0.499 0.072 232);
+  --activity-treat-surface: oklch(0.931 0.042 92);
+  --activity-treat-ink: oklch(0.509 0.085 90);
+  --activity-wake-surface: oklch(0.936 0.059 98);
+  --activity-wake-ink: oklch(0.501 0.093 94);
+  --activity-sleep-surface: oklch(0.921 0.018 293);
+  --activity-sleep-ink: oklch(0.487 0.064 287);
+  --activity-walk-surface: oklch(0.92 0.027 138);
+  --activity-walk-ink: oklch(0.502 0.083 142);
+  --activity-play-surface: oklch(0.912 0.024 37);
+  --activity-play-ink: oklch(0.507 0.067 34);
+  --activity-training-surface: oklch(0.91 0.019 337);
+  --activity-training-ink: oklch(0.478 0.062 340);
+  --activity-note-surface: oklch(0.919 0.008 114);
+  --activity-note-ink: oklch(0.484 0.013 159);
+
   /* Semantic color roles. */
   --canvas: var(--palette-warm-100);
   --surface: var(--palette-warm-50);
@@ -113,6 +137,61 @@
   --z-modal: 40;
   --z-toast: 50;
   --z-tooltip: 60;
+}
+
+[data-activity-kind="pee"] {
+  --activity-surface: var(--activity-pee-surface);
+  --activity-ink: var(--activity-pee-ink);
+}
+
+[data-activity-kind="poop"] {
+  --activity-surface: var(--activity-poop-surface);
+  --activity-ink: var(--activity-poop-ink);
+}
+
+[data-activity-kind="meal"] {
+  --activity-surface: var(--activity-meal-surface);
+  --activity-ink: var(--activity-meal-ink);
+}
+
+[data-activity-kind="water"] {
+  --activity-surface: var(--activity-water-surface);
+  --activity-ink: var(--activity-water-ink);
+}
+
+[data-activity-kind="treat"] {
+  --activity-surface: var(--activity-treat-surface);
+  --activity-ink: var(--activity-treat-ink);
+}
+
+[data-activity-kind="wake"] {
+  --activity-surface: var(--activity-wake-surface);
+  --activity-ink: var(--activity-wake-ink);
+}
+
+[data-activity-kind="sleep"] {
+  --activity-surface: var(--activity-sleep-surface);
+  --activity-ink: var(--activity-sleep-ink);
+}
+
+[data-activity-kind="walk"] {
+  --activity-surface: var(--activity-walk-surface);
+  --activity-ink: var(--activity-walk-ink);
+}
+
+[data-activity-kind="play"] {
+  --activity-surface: var(--activity-play-surface);
+  --activity-ink: var(--activity-play-ink);
+}
+
+[data-activity-kind="training"] {
+  --activity-surface: var(--activity-training-surface);
+  --activity-ink: var(--activity-training-ink);
+}
+
+[data-activity-kind="note"] {
+  --activity-surface: var(--activity-note-surface);
+  --activity-ink: var(--activity-note-ink);
 }
 
 @theme inline {

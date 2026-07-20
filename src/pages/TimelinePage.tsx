@@ -10,6 +10,7 @@ import AppFrame from "@/components/AppFrame";
 import { Button } from "@/components/ui/button";
 import { formatDate, formatNumber } from "@/i18n/format";
 import type { Locale } from "@/i18n/locale";
+import { activityVisuals } from "@/lib/activityVisuals";
 import { formatElapsed, getElapsedMs } from "@/lib/timers";
 import { toTrainingRating, trainingRatings } from "@/lib/trainingRating";
 import { EventEditor } from "@/pages/DashboardPage";
@@ -67,6 +68,8 @@ const skeletonRows = [0, 1, 2] as const;
 
 const eventTime = (at: number, timezone: string) =>
   formatZonedDateTimeLocal(at, timezone)?.slice(11) ?? "—";
+const isDurationEvent = (event: TimelineEvent) =>
+  event.endedAt !== undefined || activityVisuals[event.kind].durationCapable;
 const eventLabel = (
   event: TimelineEvent,
   activityTypesById: ActivityTypesById,
@@ -112,6 +115,37 @@ const groupTrainingSessions = (sessions: TrainingSession[]) =>
     }, new Map<string, TrainingGroup>()),
   ).map(([, group]) => group);
 
+const summarizeDay = (items: TimelineItem[]) => {
+  const events = items
+    .flatMap((item) => (item.type === "event" ? [item.event] : []))
+    .sort((left, right) => left.at - right.at);
+  let sleepStartedAt: number | null = null;
+  let restMs = 0;
+  let walkMs = 0;
+
+  for (const event of events) {
+    if (event.kind === "sleep") {
+      sleepStartedAt = event.at;
+    } else if (
+      event.kind === "wake" &&
+      sleepStartedAt !== null &&
+      event.at > sleepStartedAt
+    ) {
+      restMs += event.at - sleepStartedAt;
+      sleepStartedAt = null;
+    }
+    if (
+      event.kind === "walk" &&
+      event.endedAt !== undefined &&
+      event.endedAt > event.at
+    ) {
+      walkMs += event.endedAt - event.at;
+    }
+  }
+
+  return { activityCount: items.length, restMs, walkMs };
+};
+
 function TimelineRow({
   activityTypesById,
   dog,
@@ -138,40 +172,61 @@ function TimelineRow({
     event.endedAt === undefined
       ? null
       : formatElapsed(getElapsedMs(event.at, event.endedAt), locale);
+  const visual = activityVisuals[event.kind];
 
   return (
-    <li className="grid min-w-0 gap-2 border-b border-border py-4 last:border-0 sm:grid-cols-[5.25rem_minmax(0,1fr)] sm:gap-5">
+    <li
+      data-activity-kind={event.kind}
+      className="grid min-w-0 grid-cols-[3.5rem_1.25rem_minmax(0,1fr)] gap-x-2 py-2"
+    >
       <time
         dateTime={new Date(event.at).toISOString()}
-        className="text-base font-semibold tabular-nums text-foreground"
+        className="pt-3 text-right text-sm font-semibold leading-5 tabular-nums text-muted-foreground"
       >
         {time}
       </time>
-      <div className="min-w-0">
+      <span aria-hidden="true" className="relative flex justify-center">
+        <span className="absolute inset-y-0 w-px bg-border" />
+        <span
+          data-activity-kind={event.kind}
+          data-marker-shape={isDurationEvent(event) ? "duration" : "moment"}
+          className={`relative z-[var(--z-base)] mt-3 block w-3 bg-[var(--activity-ink)] ring-2 ring-background ${
+            isDurationEvent(event) ? "h-10 rounded-sm" : "h-3 rounded-full"
+          }`}
+        />
+      </span>
+      <div
+        data-activity-kind={event.kind}
+        className="min-w-0 rounded-lg bg-[var(--activity-surface)] px-3 py-3 sm:px-4"
+      >
         {isEditing ? (
-          <div className="rounded-lg bg-muted/70 p-4">
-            <EventEditor
-              dog={dog}
-              event={event}
-              onCancel={onCancelEdit}
-              onSaved={onSaved}
-            />
-          </div>
+          <EventEditor
+            dog={dog}
+            event={event}
+            onCancel={onCancelEdit}
+            onSaved={onSaved}
+          />
         ) : (
           <>
             <div className="flex flex-wrap items-center gap-2">
               <h4 className="break-words text-base font-semibold leading-6 [overflow-wrap:anywhere]">
+                <span
+                  aria-hidden="true"
+                  className="mr-2 text-[var(--activity-ink)]"
+                >
+                  {visual.symbol}
+                </span>
                 {label}
               </h4>
               {event.kind === "pee" && event.peePlace && (
-                <span className="rounded-full bg-muted px-2.5 py-1 text-xs font-semibold text-muted-foreground">
+                <span className="rounded-full bg-card/75 px-2.5 py-1 text-xs font-semibold text-muted-foreground">
                   {t(`peePlace.${event.peePlace}`)}
                 </span>
               )}
               {event.walkId !== undefined && (
                 <span
                   title={t("linkedWalk", { id: event.walkId })}
-                  className="rounded-full bg-secondary px-2.5 py-1 text-xs font-semibold text-muted-foreground"
+                  className="rounded-full bg-card/75 px-2.5 py-1 text-xs font-semibold text-muted-foreground"
                 >
                   {t("duringWalk")}
                 </span>
@@ -186,7 +241,7 @@ function TimelineRow({
               )}
             </div>
             {event.note && (
-              <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-6 text-muted-foreground [overflow-wrap:anywhere]">
+              <p className="mt-3 max-w-[70ch] whitespace-pre-wrap break-words text-base leading-6 text-muted-foreground [overflow-wrap:anywhere]">
                 {event.note}
               </p>
             )}
@@ -215,22 +270,43 @@ function TrainingTimelineRow({
 }) {
   const { t } = useTranslation("timeline");
   const time = eventTime(training.at, dog.timezone);
+  const visual = activityVisuals.training;
   const href =
     training.commands.length === 1
       ? `/training?command=${training.commands[0].commandId}#command-detail`
       : "/training";
 
   return (
-    <li className="grid min-w-0 gap-2 border-b border-border py-4 last:border-0 sm:grid-cols-[5.25rem_minmax(0,1fr)] sm:gap-5">
+    <li
+      data-activity-kind="training"
+      className="grid min-w-0 grid-cols-[3.5rem_1.25rem_minmax(0,1fr)] gap-x-2 py-2"
+    >
       <time
         dateTime={new Date(training.at).toISOString()}
-        className="text-base font-semibold tabular-nums text-foreground"
+        className="pt-3 text-right text-sm font-semibold leading-5 tabular-nums text-muted-foreground"
       >
         {time}
       </time>
-      <div className="min-w-0">
+      <span aria-hidden="true" className="relative flex justify-center">
+        <span className="absolute inset-y-0 w-px bg-border" />
+        <span
+          data-activity-kind="training"
+          data-marker-shape="moment"
+          className="relative z-[var(--z-base)] mt-3 block h-3 w-3 rounded-full bg-[var(--activity-ink)] ring-2 ring-background"
+        />
+      </span>
+      <div
+        data-activity-kind="training"
+        className="min-w-0 rounded-lg bg-[var(--activity-surface)] px-3 py-3 sm:px-4"
+      >
         <div className="flex flex-wrap items-center gap-2">
           <h4 className="text-base font-semibold leading-6">
+            <span
+              aria-hidden="true"
+              className="mr-2 text-[var(--activity-ink)]"
+            >
+              {visual.symbol}
+            </span>
             {t("kinds.training")}
           </h4>
         </div>
@@ -247,7 +323,7 @@ function TrainingTimelineRow({
                 <span className="break-words text-sm font-medium leading-5 [overflow-wrap:anywhere]">
                   {command.commandName}
                 </span>
-                <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-secondary px-2.5 py-1 text-xs font-semibold text-muted-foreground">
+                <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-card/75 px-2.5 py-1 text-xs font-semibold text-muted-foreground">
                   <span aria-hidden="true">{rating.icon}</span>
                   {t(`trainingRating.${rating.value}`)}
                 </span>
@@ -256,7 +332,7 @@ function TrainingTimelineRow({
           })}
         </div>
         {training.notes && (
-          <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-6 text-muted-foreground [overflow-wrap:anywhere]">
+          <p className="mt-3 max-w-[70ch] whitespace-pre-wrap break-words text-base leading-6 text-muted-foreground [overflow-wrap:anywhere]">
             {training.notes}
           </p>
         )}
@@ -443,7 +519,8 @@ function TimelinePage({ dog }: { dog: TimelineDog }) {
           {filterOptions.map((kind) => (
             <label
               key={kind}
-              className="inline-flex min-h-11 min-w-0 cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm font-medium has-[:checked]:font-semibold hover:bg-accent"
+              data-activity-kind={kind}
+              className="inline-flex min-h-11 min-w-0 cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-sm font-medium has-[:checked]:bg-[var(--activity-surface)] has-[:checked]:font-semibold hover:bg-accent"
             >
               <input
                 type="checkbox"
@@ -452,6 +529,12 @@ function TimelinePage({ dog }: { dog: TimelineDog }) {
                 className="size-5 shrink-0 accent-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
                 onChange={() => toggleKind(kind)}
               />
+              <span
+                aria-hidden="true"
+                className="shrink-0 font-semibold text-[var(--activity-ink)]"
+              >
+                {activityVisuals[kind].symbol}
+              </span>
               <span className="min-w-0 whitespace-normal break-words [overflow-wrap:anywhere]">
                 {t(`kinds.${kind}`)}
               </span>
@@ -463,11 +546,11 @@ function TimelinePage({ dog }: { dog: TimelineDog }) {
       <section
         aria-labelledby="timeline-ledger-title"
         aria-busy={isLoading || isLoadingMore}
-        className="mt-6 rounded-xl border border-border bg-card px-5 py-6 sm:px-7"
+        className="mt-6 min-w-0"
       >
         <h2
           id="timeline-ledger-title"
-          className="border-b border-border pb-4 text-xl font-semibold leading-7"
+          className="border-b border-border pb-4 text-xl font-bold leading-[1.625rem]"
         >
           {t("timeline")}
         </h2>
@@ -494,10 +577,11 @@ function TimelinePage({ dog }: { dog: TimelineDog }) {
               {skeletonRows.map((row) => (
                 <div
                   key={row}
-                  className="grid animate-pulse gap-2 border-b border-border py-4 motion-reduce:animate-none sm:grid-cols-[5.25rem_minmax(0,1fr)] sm:gap-5"
+                  className="grid animate-pulse grid-cols-[3.5rem_1.25rem_minmax(0,1fr)] gap-x-2 py-2 motion-reduce:animate-none"
                 >
-                  <span className="h-5 w-14 rounded-md bg-muted" />
-                  <span className="h-5 w-full max-w-64 rounded-md bg-muted" />
+                  <span className="mt-3 h-5 w-12 rounded-md bg-muted" />
+                  <span className="mt-3 size-3 justify-self-center rounded-full bg-muted" />
+                  <span className="h-16 w-full rounded-lg bg-muted" />
                 </div>
               ))}
             </div>
@@ -508,13 +592,46 @@ function TimelinePage({ dog }: { dog: TimelineDog }) {
               <section
                 key={day.date}
                 aria-labelledby={`timeline-day-${day.date}`}
+                className="mt-5 first:mt-0"
               >
-                <h3
-                  id={`timeline-day-${day.date}`}
-                  className="sticky top-0 z-[var(--z-sticky)] -mx-5 border-b border-border bg-secondary px-5 py-3 text-base font-semibold leading-6 sm:-mx-7 sm:px-7"
-                >
-                  <time dateTime={day.date}>{day.label}</time>
-                </h3>
+                <div className="sticky top-0 z-[var(--z-sticky)] flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-y border-border bg-secondary px-3 py-3 sm:px-4">
+                  <h3
+                    id={`timeline-day-${day.date}`}
+                    className="text-base font-semibold leading-6"
+                  >
+                    <time dateTime={day.date}>{day.label}</time>
+                  </h3>
+                  {(() => {
+                    const summary = summarizeDay(day.items);
+                    const clauses = [
+                      summary.restMs > 0
+                        ? t("daySummary.rest", {
+                            duration: formatElapsed(summary.restMs, locale),
+                          })
+                        : null,
+                      summary.walkMs > 0
+                        ? t("daySummary.walk", {
+                            duration: formatElapsed(summary.walkMs, locale),
+                          })
+                        : null,
+                      t("daySummary.activities", {
+                        count: summary.activityCount,
+                        formattedCount: formatNumber(
+                          summary.activityCount,
+                          locale,
+                        ),
+                      }),
+                    ].filter(Boolean);
+                    return (
+                      <p
+                        data-day-summary=""
+                        className="break-words text-sm font-medium leading-5 text-muted-foreground [overflow-wrap:anywhere]"
+                      >
+                        {clauses.join(" · ")}
+                      </p>
+                    );
+                  })()}
+                </div>
                 <ol>
                   {day.items.map((item) =>
                     item.type === "training" ? (

@@ -242,6 +242,107 @@ describe("TimelinePage", () => {
     }
   });
 
+  it("uses shared activity visuals in filters and stream rows", () => {
+    convex.eventResults = [event({ kind: "meal" })];
+    renderPage();
+
+    const filter = screen
+      .getByRole("checkbox", { name: "Meal" })
+      .closest("label");
+    const row = screen.getByRole("listitem");
+    const heading = within(row).getByRole("heading", { name: "Meal" });
+    const surface = heading.closest('[data-activity-kind="meal"]');
+    const marker = row.querySelector('[data-marker-shape="moment"]');
+
+    expect(filter).toHaveAttribute("data-activity-kind", "meal");
+    expect(within(filter!).getByText("◒")).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    );
+    expect(row).toHaveAttribute("data-activity-kind", "meal");
+    expect(surface).toHaveClass("bg-[var(--activity-surface)]");
+    expect(marker).toHaveAttribute("data-activity-kind", "meal");
+    expect(within(heading).getByText("◒")).toHaveAttribute(
+      "aria-hidden",
+      "true",
+    );
+  });
+
+  it("distinguishes moment and duration markers without relying on color", () => {
+    convex.eventResults = [
+      event({
+        _id: "meal-id",
+        at: Date.parse("2026-07-10T12:00:00Z"),
+        kind: "meal",
+      }),
+      event({
+        _id: "sleep-id",
+        at: Date.parse("2026-07-10T11:00:00Z"),
+        kind: "sleep",
+      }),
+      event({
+        _id: "ended-pee-id",
+        endedAt: Date.parse("2026-07-10T10:05:00Z"),
+      }),
+    ];
+    renderPage();
+
+    const rowFor = (name: string) =>
+      screen.getByRole("heading", { name }).closest("li")!;
+
+    expect(
+      rowFor("Meal").querySelector('[data-marker-shape="moment"]'),
+    ).toBeInTheDocument();
+    expect(
+      rowFor("Fell asleep").querySelector('[data-marker-shape="duration"]'),
+    ).toBeInTheDocument();
+    expect(
+      rowFor("Pee").querySelector('[data-marker-shape="duration"]'),
+    ).toBeInTheDocument();
+  });
+
+  it("summarizes completed rest, walks, and grouped daily activity", () => {
+    convex.eventResults = [
+      event({
+        _id: "unpaired-sleep-id",
+        at: Date.parse("2026-07-10T12:00:00Z"),
+        endedAt: Date.parse("2026-07-10T13:00:00Z"),
+        kind: "sleep",
+      }),
+      event({
+        _id: "walk-id",
+        at: Date.parse("2026-07-10T10:00:00Z"),
+        endedAt: Date.parse("2026-07-10T10:30:00Z"),
+        kind: "walk",
+      }),
+      event({
+        _id: "wake-id",
+        at: Date.parse("2026-07-10T08:00:00Z"),
+        kind: "wake",
+      }),
+      event({
+        _id: "sleep-id",
+        at: Date.parse("2026-07-10T06:00:00Z"),
+        kind: "sleep",
+      }),
+    ];
+    convex.trainingResults = [
+      trainingSession({ notes: "Morning practice." }),
+      trainingSession({
+        _id: "stay-session",
+        commandId: "stay-id",
+        commandName: "Stay",
+        notes: "Morning practice.",
+      }),
+    ];
+    renderPage();
+
+    expect(document.querySelector("[data-day-summary]")).toHaveTextContent(
+      "2h rest · 30m walk · 5 activities",
+    );
+    expect(screen.getAllByRole("listitem")).toHaveLength(5);
+  });
+
   it("shows first-page, empty, loading-more, fallback, and exhausted states", () => {
     convex.eventStatus = "LoadingFirstPage";
     convex.trainingStatus = "LoadingFirstPage";
@@ -359,7 +460,11 @@ describe("TimelinePage", () => {
       "Friday, July 10, 2026",
       "Thursday, July 9, 2026",
     ]);
-    expect(days[0]).toHaveClass("sticky", "top-0", "bg-secondary");
+    expect(days[0]?.parentElement).toHaveClass(
+      "sticky",
+      "top-0",
+      "bg-secondary",
+    );
     const rows = screen.getAllByRole("listitem");
     expect(within(rows[0]).getByText("00:15")).toBeVisible();
     expect(within(rows[1]).getByText("23:45")).toBeVisible();
@@ -529,5 +634,8 @@ describe("TimelinePage", () => {
       "Prepojená prechádzka walk-id",
     );
     expect(screen.getByText("piatok 10. júla 2026")).toBeVisible();
+    expect(document.querySelector("[data-day-summary]")).toHaveTextContent(
+      "1 aktivita",
+    );
   });
 });

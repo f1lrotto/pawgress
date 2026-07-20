@@ -1,6 +1,6 @@
 import { ConvexError, v } from "convex/values";
 
-import type { Id } from "../_generated/dataModel";
+import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 
 const maxFutureMs = 5 * 60 * 1_000;
@@ -90,4 +90,40 @@ export const requireEventForDog = async (
     throw new ConvexError("EVENT_NOT_FOUND");
   }
   return existing;
+};
+
+export const assertWalkInterval = async (
+  ctx: MutationCtx,
+  dogId: Id<"dogs">,
+  at: number,
+  endedAt: number | undefined,
+  excludedId?: Id<"events">,
+) => {
+  const findOther = (events: Array<Doc<"events">>) =>
+    events.find(({ _id }) => _id !== excludedId) ?? null;
+  const [previousEvents, nextEvents] = await Promise.all([
+    ctx.db
+      .query("events")
+      .withIndex("by_dog_kind_at", (q) =>
+        q.eq("dogId", dogId).eq("kind", "walk").lte("at", at),
+      )
+      .order("desc")
+      .take(2),
+    ctx.db
+      .query("events")
+      .withIndex("by_dog_kind_at", (q) =>
+        q.eq("dogId", dogId).eq("kind", "walk").gte("at", at),
+      )
+      .order("asc")
+      .take(2),
+  ]);
+  const previous = findOther(previousEvents);
+  const next = findOther(nextEvents);
+  if (
+    (previous !== null &&
+      (previous.endedAt === undefined || previous.endedAt > at)) ||
+    (next !== null && (endedAt === undefined || endedAt > next.at))
+  ) {
+    throw new ConvexError("INVALID_WALK_INTERVAL");
+  }
 };

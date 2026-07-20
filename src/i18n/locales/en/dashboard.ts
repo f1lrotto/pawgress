@@ -70,6 +70,37 @@ const dashboard = {
     drinks: "Drinks logged today",
     loading: "Opening today’s water count…",
   },
+  dayOverview: {
+    title: "Today so far",
+    aria: "Today’s activity overview",
+    loading: "Opening today’s activity overview…",
+    empty:
+      "No activities yet today. Logged moments will appear here as the day unfolds.",
+    updated: "Updated {{time}}",
+    activityCount_one: "{{formattedCount}} activity",
+    activityCount_few: "{{formattedCount}} activities",
+    activityCount_other: "{{formattedCount}} activities",
+    legend: {
+      aria: "Activity overview legend",
+      sleep: "Sleep & naps",
+      walk: "Walk",
+      events: "Events",
+    },
+    ribbonAria: "Activity overview from midnight to now",
+    scrollAria: "Scrollable 24-hour activity overview",
+    scrollHint: "Five-hour view · Tap a dot · Swipe to explore ↔",
+    now: "Now",
+    summary: {
+      rest: "{{duration}} rest",
+      walk: "{{duration}} walking",
+      activities_one: "{{formattedCount}} activity",
+      activities_few: "{{formattedCount}} activities",
+      activities_other: "{{formattedCount}} activities",
+    },
+    eventAria: "{{time}} · {{label}}{{detail}}",
+    clusterAria: "{{start}}–{{end}} · {{activities}}: {{labels}}",
+    durationAria: "{{label}} · {{start}}–{{end}} · {{duration}}",
+  },
   agenda: {
     kicker: "Daily field card",
     title: "Today’s agenda",
@@ -116,6 +147,14 @@ const dashboard = {
     changedElsewhere: "This walk changed on another device. Syncing now.",
     endError: "We couldn't end the walk. Try again.",
   },
+  walkPrompt: {
+    title: "Are you on a walk?",
+    no: "No",
+    yes: "Yes",
+    whenStarted: "When did the walk start?",
+    minutesAgo: "{{count}} min ago",
+    starting: "Starting…",
+  },
   backdate: {
     open: "Log with details",
     aria: "Backdated event",
@@ -132,6 +171,22 @@ const dashboard = {
     restConflict: "That time conflicts with the existing sleep sequence.",
     walkInactive:
       "That walk is no longer active. Try again to save this as a standalone log.",
+    reconstruct: "This happened during a walk",
+    reconstructHelp:
+      "Add the timing to rebuild the completed walk around this potty log.",
+    walkOffset: "How far into the walk?",
+    walkDuration: "How long was the walk?",
+    minutes: "{{count}} min",
+    other: "Other",
+    customMinutes: "Custom minutes for {{field}}",
+    offsetRequired: "Choose or enter the minutes into the walk.",
+    durationRequired: "Choose or enter the total walk duration.",
+    durationTooShort:
+      "The walk must last at least until this potty event happened.",
+    walkEndFuture: "The reconstructed walk cannot end in the future.",
+    walkOverlap:
+      "That walk overlaps another recorded walk. Choose different timing.",
+    walkSummary: "Walk {{start}}–{{end}} · {{event}} at {{eventAt}}",
     saveError: "We couldn't save this log. Nothing was lost—try again.",
   },
   quick: {
@@ -238,10 +293,20 @@ const dashboard = {
     walkEnded:
       "The walk ended on another device. This potty log was not saved—try again.",
     pottyOutside: "This potty time falls outside the active walk. Try again.",
+    walkAndPottyLogged:
+      "Walk started {{minutes}} min ago and {{event}} logged for {{dogName}}.",
+    walkStartedElsewhere:
+      "A walk was started on another device. Try logging again to attach this event.",
+    walkOverlap:
+      "That start time overlaps another walk. Choose a more recent start.",
+    walkAndPottyError:
+      "We couldn't start the walk and save this potty log. Try again.",
     restChanged: "The sleep state changed on another device. Try again.",
     removing: "Removing last log…",
     removed: "Last log removed.",
     undoError: "We couldn't undo that log. Try again.",
+    reconstructionChanged:
+      "That walk changed after it was saved, so it could not be undone safely.",
   },
   page: {
     syncingDay: "Syncing local day",

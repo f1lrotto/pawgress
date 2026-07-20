@@ -1,9 +1,8 @@
 import { ConvexError, v } from "convex/values";
 
-import type { Doc, Id } from "./_generated/dataModel";
-import type { MutationCtx } from "./_generated/server";
 import { dogMutation, dogQuery } from "./lib/functions";
 import {
+  assertWalkInterval,
   event,
   maxWalkEvents,
   normalizeNote,
@@ -61,33 +60,6 @@ const validateLimit = (limit: number) => {
     throw new ConvexError("INVALID_LIMIT");
   }
   return limit;
-};
-
-const findAdjacentWalks = async (
-  ctx: MutationCtx,
-  dogId: Id<"dogs">,
-  eventId: Id<"events">,
-  at: number,
-) => {
-  const findOther = (events: Array<Doc<"events">>) =>
-    events.find(({ _id }) => _id !== eventId) ?? null;
-  const [previous, next] = await Promise.all([
-    ctx.db
-      .query("events")
-      .withIndex("by_dog_kind_at", (q) =>
-        q.eq("dogId", dogId).eq("kind", "walk").lte("at", at),
-      )
-      .order("desc")
-      .take(2),
-    ctx.db
-      .query("events")
-      .withIndex("by_dog_kind_at", (q) =>
-        q.eq("dogId", dogId).eq("kind", "walk").gte("at", at),
-      )
-      .order("asc")
-      .take(2),
-  ]);
-  return { previous: findOther(previous), next: findOther(next) };
 };
 
 export const logQuick = dogMutation({
@@ -167,7 +139,7 @@ export const update = dogMutation({
     } else if (existing.kind === "walk") {
       const nextAt = timestamp ?? existing.at;
       const nextEndedAt = endTimestamp ?? existing.endedAt;
-      const [firstPotty, lastPotty, adjacent] = await Promise.all([
+      const [firstPotty, lastPotty] = await Promise.all([
         ctx.db
           .query("events")
           .withIndex("by_walk_at", (q) => q.eq("walkId", eventId))
@@ -177,19 +149,14 @@ export const update = dogMutation({
           .withIndex("by_walk_at", (q) => q.eq("walkId", eventId))
           .order("desc")
           .first(),
-        findAdjacentWalks(ctx, dogId, eventId, nextAt),
       ]);
+      await assertWalkInterval(ctx, dogId, nextAt, nextEndedAt, eventId);
       if (
         (nextEndedAt !== undefined && nextAt > nextEndedAt) ||
         (firstPotty !== null && firstPotty.at < nextAt) ||
         (nextEndedAt !== undefined &&
           lastPotty !== null &&
-          lastPotty.at > nextEndedAt) ||
-        (adjacent.previous !== null &&
-          (adjacent.previous.endedAt === undefined ||
-            adjacent.previous.endedAt > nextAt)) ||
-        (adjacent.next !== null &&
-          (nextEndedAt === undefined || nextEndedAt > adjacent.next.at))
+          lastPotty.at > nextEndedAt)
       ) {
         throw new ConvexError("INVALID_WALK_INTERVAL");
       }

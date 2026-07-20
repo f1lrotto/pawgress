@@ -3,6 +3,13 @@ const timeline = {
   amount: "Amount: {{amount}}",
   boundary: "Days follow {{timezone}}.",
   clearFilters: "Clear filters",
+  daySummary: {
+    activities_one: "{{formattedCount}} activity",
+    activities_few: "{{formattedCount}} activities",
+    activities_other: "{{formattedCount}} activities",
+    rest: "{{duration}} rest",
+    walk: "{{duration}} walk",
+  },
   duration: "Duration: {{duration}}",
   edit: "Edit",
   editAria: "Edit {{event}} at {{time}}",

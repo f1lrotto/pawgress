@@ -15,9 +15,11 @@ import { Link } from "react-router-dom";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import AppFrame from "@/components/AppFrame";
+import DayOverview, { type DayOverviewItem } from "@/components/DayOverview";
 import { Button } from "@/components/ui/button";
 import { formatNumber } from "@/i18n/format";
 import { resolveBrowserLocale } from "@/i18n/locale";
+import { activityVisuals } from "@/lib/activityVisuals";
 import { getNextMealCountdown } from "@/lib/mealCountdown";
 import { parseDecimalInput } from "@/lib/number";
 import { deriveSleepState, formatElapsed, getElapsedMs } from "@/lib/timers";
@@ -60,17 +62,28 @@ type DashboardDog = Pick<
   Doc<"dogs">,
   "_id" | "birthday" | "name" | "timezone" | "waterIntervalMinutes"
 >;
+type MinuteChoice = number | string | null;
+type UndoTarget = { eventId: Id<"events">; walkId?: Id<"events"> };
 type BackdateState = {
   amount: string;
   attachToWalk: boolean;
   at: string;
   error: string;
-  errors: { amount: string; at: string; note: string };
+  errors: {
+    amount: string;
+    at: string;
+    note: string;
+    walkDuration: string;
+    walkOffset: string;
+  };
   isOpen: boolean;
   isPending: boolean;
   kind: QuickKind;
   note: string;
   peePlace: PeePlace;
+  reconstructWalk: boolean;
+  walkDuration: MinuteChoice;
+  walkOffset: MinuteChoice;
 };
 type EditState = {
   amount: string;
@@ -85,6 +98,8 @@ type EditState = {
 type WalkTimeState = { at: string; error: string; isOpen: boolean };
 type DiaryState = { error: string; isOpen: boolean; note: string };
 type EarlierAction = { kind: QuickKind; label: string; peePlace?: PeePlace };
+type WalkPromptAction = EarlierAction & { at: number };
+type WalkPrompt = { action: WalkPromptAction; step: "question" | "start" };
 type RecentState = {
   confirmDeleteId: Id<"events"> | null;
   editId: Id<"events"> | null;
@@ -98,12 +113,21 @@ const initialBackdateState: BackdateState = {
   attachToWalk: true,
   at: "",
   error: "",
-  errors: { amount: "", at: "", note: "" },
+  errors: {
+    amount: "",
+    at: "",
+    note: "",
+    walkDuration: "",
+    walkOffset: "",
+  },
   isOpen: false,
   isPending: false,
   kind: "pee",
   note: "",
   peePlace: "outside",
+  reconstructWalk: false,
+  walkDuration: null,
+  walkOffset: null,
 };
 const mergeBackdateState = (
   state: BackdateState,
@@ -152,12 +176,29 @@ const quickActions = [
 }>;
 const defaultQuickActions = quickActions.filter(({ kind }) => kind !== "water");
 const quickTimePresets = [5, 15, 30] as const;
+const walkPromptPresets = [1, 3, 5, 10, 15] as const;
+const walkDurationPresets = [10, 15, 20, 30, 45, 60] as const;
 
 const walkFieldClassName = "field-control mt-2 w-full";
 const maxFutureMs = 5 * 60_000;
 const getCurrentTime = () => Date.now();
 const isPottyKind = (kind: QuickKind): kind is "pee" | "poop" =>
   kind === "pee" || kind === "poop";
+const getMinuteChoice = (choice: MinuteChoice) =>
+  typeof choice === "string" ? (choice.trim() ? Number(choice) : null) : choice;
+const getActivityEventLabel = (
+  event: RecentEvent,
+  activityTypesById: ActivityTypesById,
+  t: TFunction<"dashboard">,
+) => {
+  const activityType =
+    event.kind === "play" && event.activityTypeId !== undefined
+      ? activityTypesById.get(event.activityTypeId)
+      : undefined;
+  return activityType
+    ? [activityType.emoji, activityType.name].filter(Boolean).join(" ")
+    : t(`events.${event.kind}`);
+};
 
 function PeePlaceField({
   id,
@@ -1088,6 +1129,84 @@ function WalkAttachmentField({
   );
 }
 
+function MinutePresetField({
+  choice,
+  error,
+  id,
+  label,
+  min,
+  onChange,
+  presets,
+}: {
+  choice: MinuteChoice;
+  error: string;
+  id: string;
+  label: string;
+  min: number;
+  onChange: (choice: MinuteChoice) => void;
+  presets: ReadonlyArray<number>;
+}) {
+  const { t } = useTranslation("dashboard");
+  return (
+    <fieldset>
+      <legend className="text-sm font-bold">{label}</legend>
+      <label htmlFor={id} className="sr-only">
+        {label}
+      </label>
+      <select
+        id={id}
+        value={
+          choice === null ? "" : typeof choice === "number" ? choice : "other"
+        }
+        aria-invalid={Boolean(error)}
+        aria-describedby={error ? `${id}-error` : undefined}
+        className="field-control mt-2 w-full"
+        onChange={(event) =>
+          onChange(
+            event.target.value === "other"
+              ? ""
+              : event.target.value
+                ? Number(event.target.value)
+                : null,
+          )
+        }
+      >
+        <option value="">—</option>
+        {presets.map((minutes) => (
+          <option key={minutes} value={minutes}>
+            {t("backdate.minutes", { count: minutes })}
+          </option>
+        ))}
+        <option value="other">{t("backdate.other")}</option>
+      </select>
+      {typeof choice === "string" && (
+        <div className="mt-3">
+          <label htmlFor={`${id}-custom`} className="sr-only">
+            {t("backdate.customMinutes", { field: label })}
+          </label>
+          <input
+            id={`${id}-custom`}
+            type="number"
+            inputMode="numeric"
+            min={min}
+            step="1"
+            value={choice}
+            aria-invalid={Boolean(error)}
+            aria-describedby={error ? `${id}-error` : undefined}
+            className="field-control w-full"
+            onChange={(event) => onChange(event.target.value)}
+          />
+        </div>
+      )}
+      {error && (
+        <p id={`${id}-error`} className="mt-2 text-sm text-destructive">
+          {error}
+        </p>
+      )}
+    </fieldset>
+  );
+}
+
 function BackdateOptionalFields({
   amount,
   errors,
@@ -1169,17 +1288,20 @@ function BackdateForm({
   onLogged,
   onOperationEnd,
   onOperationStart,
+  timeFormatter,
 }: {
   activeWalk: ActiveWalk | undefined;
   disabled: boolean;
   dog: DashboardDog;
-  onLogged: (eventId: Id<"events">, label: string) => void;
+  onLogged: (target: UndoTarget, label: string) => void;
   onOperationEnd: () => void;
   onOperationStart: () => boolean;
+  timeFormatter: Intl.DateTimeFormat;
 }) {
   const { t } = useTranslation("dashboard");
   const logQuick = useMutation(api.events.logQuick);
   const logPotty = useMutation(api.walks.logPotty);
+  const createWithPotty = useMutation(api.walks.createWithPotty);
   const [form, updateForm] = useReducer(
     mergeBackdateState,
     initialBackdateState,
@@ -1196,15 +1318,45 @@ function BackdateForm({
     kind,
     note,
     peePlace,
+    reconstructWalk,
+    walkDuration,
+    walkOffset,
   } = form;
   const showsAmount = kind === "meal" || kind === "treat";
   const isPotty = isPottyKind(kind);
   const parsedAt = parseZonedDateTimeLocal(at, dog.timezone);
+  const isOutsidePotty = isPotty && (kind === "poop" || peePlace === "outside");
   const isBeforeWalk =
     activeWalk !== null &&
     activeWalk !== undefined &&
     parsedAt !== null &&
     parsedAt < activeWalk.at;
+  const canAttachToActiveWalk =
+    isOutsidePotty &&
+    activeWalk !== null &&
+    activeWalk !== undefined &&
+    parsedAt !== null &&
+    parsedAt >= activeWalk.at;
+  const canReconstructWalk =
+    isOutsidePotty && activeWalk !== undefined && !canAttachToActiveWalk;
+  const walkOffsetMinutes = getMinuteChoice(walkOffset);
+  const walkDurationMinutes = getMinuteChoice(walkDuration);
+  const hasValidWalkOffset =
+    walkOffsetMinutes !== null &&
+    Number.isSafeInteger(walkOffsetMinutes) &&
+    walkOffsetMinutes >= 0;
+  const hasValidWalkDuration =
+    walkDurationMinutes !== null &&
+    Number.isSafeInteger(walkDurationMinutes) &&
+    walkDurationMinutes > 0;
+  const walkStartedAt =
+    parsedAt !== null && hasValidWalkOffset
+      ? parsedAt - walkOffsetMinutes * 60_000
+      : null;
+  const walkEndedAt =
+    walkStartedAt !== null && hasValidWalkDuration
+      ? walkStartedAt + walkDurationMinutes * 60_000
+      : null;
   const availableQuickActions =
     dog.waterIntervalMinutes === undefined ? defaultQuickActions : quickActions;
 
@@ -1224,6 +1376,11 @@ function BackdateForm({
     if (submitting.current) return;
     const normalizedNote = note.trim();
     const amountValue = amount.trim() ? parseDecimalInput(amount) : undefined;
+    const shouldReconstruct = canReconstructWalk && reconstructWalk;
+    const walkStartValue =
+      walkStartedAt === null
+        ? ""
+        : (formatZonedDateTimeLocal(walkStartedAt, dog.timezone) ?? "");
     const nextErrors = {
       amount:
         showsAmount &&
@@ -1238,13 +1395,39 @@ function BackdateForm({
         normalizedNote.length > 500
           ? t("common.maxCharacters", { max: 500 })
           : "",
+      walkDuration: !shouldReconstruct
+        ? ""
+        : !hasValidWalkDuration
+          ? t("backdate.durationRequired")
+          : hasValidWalkOffset && walkDurationMinutes < walkOffsetMinutes
+            ? t("backdate.durationTooShort")
+            : walkEndedAt !== null && walkEndedAt > now
+              ? t("backdate.walkEndFuture")
+              : activeWalk !== null &&
+                  activeWalk !== undefined &&
+                  walkEndedAt !== null &&
+                  walkEndedAt > activeWalk.at
+                ? t("backdate.walkOverlap")
+                : "",
+      walkOffset: !shouldReconstruct
+        ? ""
+        : !hasValidWalkOffset
+          ? t("backdate.offsetRequired")
+          : getTimestampError(walkStartValue, walkStartedAt, dog, now, t),
     };
     updateForm({ error: "", errors: nextErrors });
-    const firstError = (["at", "note", "amount"] as const).find(
-      (field) => nextErrors[field],
-    );
+    const firstError = (
+      ["at", "walkOffset", "walkDuration", "note", "amount"] as const
+    ).find((field) => nextErrors[field]);
     if (firstError) {
-      document.getElementById(`backdate-${firstError}`)?.focus();
+      const errorIds = {
+        amount: "backdate-amount",
+        at: "backdate-at",
+        note: "backdate-note",
+        walkDuration: "backdate-walk-duration",
+        walkOffset: "backdate-walk-offset",
+      };
+      document.getElementById(errorIds[firstError])?.focus();
       return;
     }
     if (parsedAt === null) return;
@@ -1253,35 +1436,55 @@ function BackdateForm({
     submitting.current = true;
     updateForm({ isPending: true });
     try {
-      const shouldAttach =
+      const shouldAttach = canAttachToActiveWalk && attachToWalk;
+      let target: UndoTarget;
+      if (
+        shouldReconstruct &&
+        isPottyKind(kind) &&
+        walkStartedAt !== null &&
+        walkEndedAt !== null
+      ) {
+        const created = await createWithPotty({
+          dogId: dog._id,
+          kind,
+          pottyAt: parsedAt,
+          walkStartedAt,
+          walkEndedAt,
+          ...(normalizedNote ? { note: normalizedNote } : {}),
+          ...(kind === "pee" ? { peePlace: "outside" as const } : {}),
+        });
+        target = created;
+      } else if (
+        shouldAttach &&
         activeWalk !== null &&
         activeWalk !== undefined &&
-        isPotty &&
-        attachToWalk &&
-        peePlace === "outside" &&
-        !isBeforeWalk;
-      const eventId = shouldAttach
-        ? await logPotty({
-            dogId: dog._id,
-            walkId: activeWalk._id,
-            kind,
-            at: parsedAt,
-            peePlace: "outside",
-            ...(normalizedNote ? { note: normalizedNote } : {}),
-          })
-        : await logQuick({
-            dogId: dog._id,
-            kind,
-            at: parsedAt,
-            ...(normalizedNote ? { note: normalizedNote } : {}),
-            ...(showsAmount && amountValue !== undefined
-              ? { amount: amountValue }
-              : {}),
-            ...(kind === "pee" ? { peePlace } : {}),
-          });
+        isPottyKind(kind)
+      ) {
+        const eventId = await logPotty({
+          dogId: dog._id,
+          walkId: activeWalk._id,
+          kind,
+          at: parsedAt,
+          ...(kind === "pee" ? { peePlace: "outside" as const } : {}),
+          ...(normalizedNote ? { note: normalizedNote } : {}),
+        });
+        target = { eventId };
+      } else {
+        const eventId = await logQuick({
+          dogId: dog._id,
+          kind,
+          at: parsedAt,
+          ...(normalizedNote ? { note: normalizedNote } : {}),
+          ...(showsAmount && amountValue !== undefined
+            ? { amount: amountValue }
+            : {}),
+          ...(kind === "pee" ? { peePlace } : {}),
+        });
+        target = { eventId };
+      }
       const label = t(`events.${kind}`);
       clear();
-      onLogged(eventId, label);
+      onLogged(target, label);
     } catch (caught) {
       const atError = hasErrorCode(caught, "INVALID_WALK_TIMESTAMP")
         ? t("backdate.walkTimestamp")
@@ -1296,7 +1499,9 @@ function BackdateForm({
           : {
               error: hasErrorCode(caught, "WALK_NOT_ACTIVE")
                 ? t("backdate.walkInactive")
-                : t("backdate.saveError"),
+                : hasErrorCode(caught, "INVALID_WALK_INTERVAL")
+                  ? t("backdate.walkOverlap")
+                  : t("backdate.saveError"),
             },
       );
     } finally {
@@ -1305,6 +1510,9 @@ function BackdateForm({
       onOperationEnd();
     }
   };
+
+  const submitNow = (event: FormEvent<HTMLFormElement>) =>
+    void submit(event, getCurrentTime());
 
   if (!isOpen) {
     return (
@@ -1326,7 +1534,7 @@ function BackdateForm({
       aria-busy={isPending}
       className="mt-4 rounded-xl bg-muted/60 p-4 sm:p-5"
       noValidate
-      onSubmit={(event) => void submit(event, Date.now())}
+      onSubmit={submitNow}
     >
       <fieldset disabled={isPending || disabled} className="m-0 border-0 p-0">
         <legend className="text-xl font-bold leading-[1.625rem]">
@@ -1415,17 +1623,6 @@ function BackdateForm({
           </div>
         </div>
 
-        {isPotty &&
-          (kind !== "pee" || peePlace === "outside") &&
-          activeWalk !== null &&
-          activeWalk !== undefined && (
-            <WalkAttachmentField
-              attachToWalk={attachToWalk}
-              isBeforeWalk={isBeforeWalk}
-              onChange={(attachToWalk) => updateForm({ attachToWalk })}
-            />
-          )}
-
         {kind === "pee" && (
           <PeePlaceField
             id="backdate"
@@ -1438,9 +1635,109 @@ function BackdateForm({
                   activeWalk !== null &&
                   activeWalk !== undefined &&
                   !isBeforeWalk,
+                ...(peePlace === "inside" ? { reconstructWalk: false } : {}),
               })
             }
           />
+        )}
+
+        {canAttachToActiveWalk && (
+          <WalkAttachmentField
+            attachToWalk={attachToWalk}
+            isBeforeWalk={false}
+            onChange={(attachToWalk) => updateForm({ attachToWalk })}
+          />
+        )}
+
+        {canReconstructWalk && (
+          <div className="mt-4 border-t border-border pt-4">
+            <label
+              htmlFor="backdate-reconstruct-walk"
+              className="flex min-h-11 items-center gap-3 text-sm font-semibold"
+            >
+              <input
+                id="backdate-reconstruct-walk"
+                type="checkbox"
+                checked={reconstructWalk}
+                aria-controls="backdate-reconstruct-controls"
+                aria-describedby="backdate-reconstruct-help"
+                className="size-5 shrink-0 accent-primary"
+                onChange={(event) =>
+                  updateForm({
+                    reconstructWalk: event.target.checked,
+                    errors: {
+                      ...errors,
+                      walkDuration: "",
+                      walkOffset: "",
+                    },
+                  })
+                }
+              />
+              {t("backdate.reconstruct")}
+            </label>
+            <p
+              id="backdate-reconstruct-help"
+              className="pl-8 text-xs text-muted-foreground"
+            >
+              {t("backdate.reconstructHelp")}
+            </p>
+
+            {reconstructWalk && (
+              <div
+                id="backdate-reconstruct-controls"
+                className="mt-4 grid gap-5 sm:grid-cols-2"
+              >
+                <MinutePresetField
+                  choice={walkOffset}
+                  error={errors.walkOffset}
+                  id="backdate-walk-offset"
+                  label={t("backdate.walkOffset")}
+                  min={0}
+                  presets={walkPromptPresets}
+                  onChange={(walkOffset) =>
+                    updateForm({
+                      walkOffset,
+                      errors: { ...errors, walkOffset: "" },
+                    })
+                  }
+                />
+                <MinutePresetField
+                  choice={walkDuration}
+                  error={errors.walkDuration}
+                  id="backdate-walk-duration"
+                  label={t("backdate.walkDuration")}
+                  min={1}
+                  presets={walkDurationPresets}
+                  onChange={(walkDuration) =>
+                    updateForm({
+                      walkDuration,
+                      errors: { ...errors, walkDuration: "" },
+                    })
+                  }
+                />
+              </div>
+            )}
+
+            {reconstructWalk &&
+              parsedAt !== null &&
+              walkStartedAt !== null &&
+              walkEndedAt !== null &&
+              walkDurationMinutes !== null &&
+              walkOffsetMinutes !== null &&
+              walkDurationMinutes >= walkOffsetMinutes && (
+                <p
+                  role="status"
+                  className="mt-4 text-sm font-medium text-foreground"
+                >
+                  {t("backdate.walkSummary", {
+                    end: timeFormatter.format(walkEndedAt),
+                    event: t(`events.${kind}`),
+                    eventAt: timeFormatter.format(parsedAt),
+                    start: timeFormatter.format(walkStartedAt),
+                  })}
+                </p>
+              )}
+          </div>
         )}
 
         <BackdateOptionalFields
@@ -1584,7 +1881,7 @@ function QuickLogSection({
   dog,
   error,
   feedback,
-  lastCreatedId,
+  hasUndo,
   latest,
   onLog,
   onBackdated,
@@ -1592,6 +1889,7 @@ function QuickLogSection({
   onBackdateOperationStart,
   onError,
   onUndo,
+  onStartWalkForPotty,
   onWalkDiarySaved,
   onWalkOperationStart,
   onWalkTransition,
@@ -1606,9 +1904,9 @@ function QuickLogSection({
   dog: DashboardDog;
   error: string;
   feedback: string;
-  lastCreatedId: Id<"events"> | null;
+  hasUndo: boolean;
   latest: LatestEvents | undefined;
-  onBackdated: (eventId: Id<"events">, label: string) => void;
+  onBackdated: (target: UndoTarget, label: string) => void;
   onBackdateOperationEnd: () => void;
   onBackdateOperationStart: () => boolean;
   onError: (message: string) => void;
@@ -1617,7 +1915,14 @@ function QuickLogSection({
     label: string,
     at: number,
     peePlace?: PeePlace,
-  ) => void;
+    allowWalkAttachment?: boolean,
+  ) => Promise<boolean>;
+  onStartWalkForPotty: (
+    kind: "pee" | "poop",
+    label: string,
+    at: number,
+    minutesAgo: number,
+  ) => Promise<boolean>;
   onUndo: () => void;
   onWalkDiarySaved: () => void;
   onWalkOperationStart: (
@@ -1633,18 +1938,32 @@ function QuickLogSection({
 }) {
   const { t } = useTranslation("dashboard");
   const earlierDialogRef = useRef<HTMLDialogElement>(null);
+  const walkPromptDialogRef = useRef<HTMLDialogElement>(null);
   const [isEarlier, setIsEarlier] = useState(false);
   const [earlierAction, setEarlierAction] = useState<EarlierAction | null>(
     null,
   );
   const [earlierAt, setEarlierAt] = useState<number | null>(null);
+  const [walkPrompt, setWalkPrompt] = useState<WalkPrompt | null>(null);
+  const walkPromptAction = walkPrompt?.action ?? null;
   const isBusy = pendingOperation !== null;
   const activeWalkKey = activeWalk?._id ?? "no-active-walk";
   const availableQuickActions =
     dog.waterIntervalMinutes === undefined ? defaultQuickActions : quickActions;
   const log = (action: EarlierAction) => {
     if (!isEarlier) {
-      onLog(action.kind, action.label, getCurrentTime(), action.peePlace);
+      const at = getCurrentTime();
+      if (
+        activeWalk === null &&
+        isPottyKind(action.kind) &&
+        (action.kind === "poop" || action.peePlace === "outside")
+      ) {
+        onError("");
+        setWalkPrompt({ action: { ...action, at }, step: "question" });
+        walkPromptDialogRef.current?.showModal();
+        return;
+      }
+      void onLog(action.kind, action.label, at, action.peePlace);
       return;
     }
     setEarlierAction(action);
@@ -1656,10 +1975,47 @@ function QuickLogSection({
     setEarlierAction(null);
     setEarlierAt(null);
   };
+  const closeWalkPrompt = () => walkPromptDialogRef.current?.close();
+  const resetWalkPrompt = () => {
+    setWalkPrompt(null);
+    onError("");
+  };
+  const logWithoutWalk = async () => {
+    if (walkPromptAction === null) return;
+    const saved = await onLog(
+      walkPromptAction.kind,
+      walkPromptAction.label,
+      walkPromptAction.at,
+      walkPromptAction.peePlace,
+      false,
+    );
+    if (saved) closeWalkPrompt();
+  };
+  const startWalkForPotty = async (minutesAgo: number) => {
+    if (walkPromptAction === null || !isPottyKind(walkPromptAction.kind)) {
+      return;
+    }
+    const saved = await onStartWalkForPotty(
+      walkPromptAction.kind,
+      walkPromptAction.label,
+      walkPromptAction.at,
+      minutesAgo,
+    );
+    if (saved) closeWalkPrompt();
+  };
+  useEffect(() => {
+    if (walkPrompt?.step !== "start" || !walkPromptDialogRef.current?.open) {
+      return;
+    }
+    const frame = window.requestAnimationFrame(() =>
+      document.getElementById("walk-prompt-minute-1")?.focus(),
+    );
+    return () => window.cancelAnimationFrame(frame);
+  }, [walkPrompt?.step]);
   const submitEarlier = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (earlierAction === null || earlierAt === null) return;
-    onLog(
+    void onLog(
       earlierAction.kind,
       earlierAction.label,
       earlierAt,
@@ -1841,6 +2197,94 @@ function QuickLogSection({
       </div>
 
       <dialog
+        ref={walkPromptDialogRef}
+        aria-busy={isBusy}
+        aria-labelledby="walk-prompt-title"
+        className="m-auto w-[min(32rem,calc(100%-2rem))] rounded-xl bg-card p-0 text-foreground shadow-[var(--elevation-2)] backdrop:bg-foreground/40"
+        onClose={resetWalkPrompt}
+      >
+        {walkPromptAction && (
+          <div className="p-5 sm:p-6">
+            {walkPrompt?.step === "question" ? (
+              <>
+                <h3 id="walk-prompt-title" className="text-xl font-bold">
+                  {t("walkPrompt.title")}
+                </h3>
+                {error && (
+                  <p role="alert" className="mt-4 text-sm text-destructive">
+                    {error}
+                  </p>
+                )}
+                <div className="mt-6 grid grid-cols-2 gap-3">
+                  <Button
+                    type="button"
+                    disabled={isBusy}
+                    variant="secondary"
+                    aria-busy={isBusy}
+                    onClick={() => void logWithoutWalk()}
+                  >
+                    {isBusy ? t("backdate.logging") : t("walkPrompt.no")}
+                  </Button>
+                  <Button
+                    type="button"
+                    disabled={isBusy}
+                    onClick={() =>
+                      setWalkPrompt({
+                        action: walkPromptAction,
+                        step: "start",
+                      })
+                    }
+                  >
+                    {t("walkPrompt.yes")}
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h3 id="walk-prompt-title" className="text-xl font-bold">
+                  {t("walkPrompt.whenStarted")}
+                </h3>
+                <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {walkPromptPresets.map((minutes) => (
+                    <Button
+                      key={minutes}
+                      id={`walk-prompt-minute-${minutes}`}
+                      type="button"
+                      disabled={isBusy}
+                      variant="secondary"
+                      className="px-3 text-sm"
+                      onClick={() => void startWalkForPotty(minutes)}
+                    >
+                      {t("walkPrompt.minutesAgo", { count: minutes })}
+                    </Button>
+                  ))}
+                </div>
+                {isBusy && (
+                  <p role="status" className="mt-4 text-sm">
+                    {t("walkPrompt.starting")}
+                  </p>
+                )}
+                {error && (
+                  <p role="alert" className="mt-4 text-sm text-destructive">
+                    {error}
+                  </p>
+                )}
+              </>
+            )}
+            <Button
+              type="button"
+              disabled={isBusy}
+              variant="quiet"
+              className="mt-2 w-full"
+              onClick={closeWalkPrompt}
+            >
+              {t("common.cancel")}
+            </Button>
+          </div>
+        )}
+      </dialog>
+
+      <dialog
         ref={earlierDialogRef}
         aria-labelledby="earlier-dialog-title"
         className="m-auto w-[min(32rem,calc(100%-2rem))] rounded-xl bg-card p-0 text-foreground shadow-[var(--elevation-2)] backdrop:bg-foreground/40"
@@ -1893,9 +2337,10 @@ function QuickLogSection({
         onLogged={onBackdated}
         onOperationEnd={onBackdateOperationEnd}
         onOperationStart={onBackdateOperationStart}
+        timeFormatter={timeFormatter}
       />
 
-      {error && (
+      {error && walkPromptAction === null && (
         <p
           role="alert"
           className="mt-5 rounded-lg border border-destructive/25 bg-background px-4 py-3 text-sm text-destructive"
@@ -1903,10 +2348,10 @@ function QuickLogSection({
           {error}
         </p>
       )}
-      {(feedback || lastCreatedId) && (
+      {(feedback || hasUndo) && (
         <div className="mt-5 flex min-h-12 items-center justify-between gap-3 border-t border-border py-3 text-sm">
           <span role="status">{feedback || t("quick.fallbackUndo")}</span>
-          {lastCreatedId && (
+          {hasUndo && (
             <Button
               type="button"
               disabled={isBusy}
@@ -2368,10 +2813,6 @@ function TrainingQuickLog({
                                           ? "training-rating-error"
                                           : undefined
                                       }
-                                      aria-invalid={
-                                        activeRatingErrorCommandId ===
-                                        command._id
-                                      }
                                       checked={session.rating === value}
                                       onChange={() => {
                                         setSessions((current) =>
@@ -2800,7 +3241,7 @@ function WalkRowDetails({
             ? t("recent.inProgress")
             : t("recent.completed")}
         </span>
-        <span className="text-muted-foreground">
+        <span className="tabular-nums text-muted-foreground">
           <time dateTime={new Date(event.at).toISOString()}>
             {timeFormatter.format(event.at)}
           </time>
@@ -2816,7 +3257,7 @@ function WalkRowDetails({
         </span>
       </div>
       {event.note && (
-        <p className="mt-2 text-sm text-muted-foreground">
+        <p className="mt-2 max-w-[70ch] text-base leading-6 text-muted-foreground">
           <span className="font-semibold text-foreground">
             {t("recent.diary")}
           </span>{" "}
@@ -2919,17 +3360,9 @@ function RecentActivity({
           {t("recent.empty")}
         </p>
       ) : (
-        <ol className="mt-4 divide-y divide-border border-y border-border">
+        <ol className="mt-4 space-y-2">
           {recent.map((event) => {
-            const activityType =
-              event.kind === "play" && event.activityTypeId !== undefined
-                ? activityTypesById.get(event.activityTypeId)
-                : undefined;
-            const label = activityType
-              ? [activityType.emoji, activityType.name]
-                  .filter(Boolean)
-                  .join(" ")
-              : t(`events.${event.kind}`);
+            const label = getActivityEventLabel(event, activityTypesById, t);
             const date = dateFormatter.format(event.at);
             const time = timeFormatter.format(event.at);
             const isWalk = event.kind === "walk";
@@ -2939,26 +3372,38 @@ function RecentActivity({
                 : null;
             const isConfirming = confirmDeleteId === event._id;
             return (
-              <li key={event._id} className="py-4">
+              <li
+                key={event._id}
+                data-activity-kind={event.kind}
+                className={
+                  editId === event._id
+                    ? "rounded-lg bg-muted p-4"
+                    : "rounded-lg bg-[var(--activity-surface)] px-4 py-4"
+                }
+              >
                 {editId === event._id ? (
-                  <div className="rounded-lg bg-muted/70 p-4">
-                    <EventEditor
-                      dog={dog}
-                      event={event}
-                      onCancel={() => updateState({ editId: null })}
-                      onSaved={(savedLabel) =>
-                        updateState({
-                          editId: null,
-                          error: "",
-                          status: t("recent.updated", { event: savedLabel }),
-                        })
-                      }
-                    />
-                  </div>
+                  <EventEditor
+                    dog={dog}
+                    event={event}
+                    onCancel={() => updateState({ editId: null })}
+                    onSaved={(savedLabel) =>
+                      updateState({
+                        editId: null,
+                        error: "",
+                        status: t("recent.updated", { event: savedLabel }),
+                      })
+                    }
+                  />
                 ) : (
                   <>
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex flex-wrap items-center gap-2">
+                        <span
+                          aria-hidden="true"
+                          className="font-semibold text-[var(--activity-ink)]"
+                        >
+                          {activityVisuals[event.kind].symbol}
+                        </span>
                         <strong className="font-semibold">{label}</strong>
                         {event.kind === "pee" && event.peePlace && (
                           <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold text-muted-foreground">
@@ -2973,7 +3418,7 @@ function RecentActivity({
                       </div>
                       <time
                         dateTime={new Date(event.at).toISOString()}
-                        className="shrink-0 text-right"
+                        className="shrink-0 text-right tabular-nums"
                       >
                         <span className="block text-xs text-muted-foreground">
                           {date}
@@ -2993,7 +3438,7 @@ function RecentActivity({
                       />
                     ) : (
                       event.note && (
-                        <p className="mt-2 text-sm text-muted-foreground">
+                        <p className="mt-2 max-w-[70ch] text-base leading-6 text-muted-foreground">
                           {event.note}
                         </p>
                       )
@@ -3109,7 +3554,10 @@ function RecentActivity({
 function DashboardPage({ dog }: { dog: DashboardDog }) {
   const { i18n, t } = useTranslation("dashboard");
   const locale = resolveBrowserLocale([i18n.resolvedLanguage ?? i18n.language]);
-  const recent = useQuery(api.events.listRecent, { dogId: dog._id, limit: 8 });
+  const recent = useQuery(api.events.listRecent, {
+    dogId: dog._id,
+    limit: 100,
+  });
   const activityTypes = useQuery(api.activityTypes.list, {
     dogId: dog._id,
     includeArchived: true,
@@ -3124,10 +3572,12 @@ function DashboardPage({ dog }: { dog: DashboardDog }) {
   });
   const logQuick = useMutation(api.events.logQuick);
   const logPotty = useMutation(api.walks.logPotty);
+  const createWithPotty = useMutation(api.walks.createWithPotty);
   const removeEvent = useMutation(api.events.remove);
+  const undoReconstruction = useMutation(api.walks.undoReconstruction);
   const [pendingOperation, setPendingOperation] =
     useState<PendingOperation>(null);
-  const [lastCreatedId, setLastCreatedId] = useState<Id<"events"> | null>(null);
+  const [undoTarget, setUndoTarget] = useState<UndoTarget | null>(null);
   const [feedback, setFeedback] = useState("");
   const [error, setError] = useState("");
   const [now, setNow] = useState<number | null>(null);
@@ -3196,6 +3646,68 @@ function DashboardPage({ dog }: { dog: DashboardDog }) {
     }),
     [dog.timezone, locale],
   );
+  const overviewItems = useMemo<DayOverviewItem[] | undefined>(() => {
+    if (
+      now === null ||
+      dayWindow === null ||
+      recent === undefined ||
+      trainingDay === undefined
+    ) {
+      return undefined;
+    }
+
+    const priorRestTransition = recent.reduce<RecentEvent | undefined>(
+      (latestTransition, event) =>
+        (event.kind === "sleep" || event.kind === "wake") &&
+        event.at < dayWindow.startAt &&
+        (latestTransition === undefined || event.at > latestTransition.at)
+          ? event
+          : latestTransition,
+      undefined,
+    );
+    const dayEvents = recent.filter(
+      ({ at }) => at >= dayWindow.startAt && at < dayWindow.endAt,
+    );
+    const eventItems = [
+      ...(priorRestTransition?.kind === "sleep" ? [priorRestTransition] : []),
+      ...dayEvents,
+    ].map((event) => ({
+      id: String(event._id),
+      at: event.at,
+      endedAt: event.endedAt,
+      kind: event.kind,
+      label: getActivityEventLabel(event, activityTypesById, t),
+      detail: event.note,
+    }));
+    const trainingGroups = new Map<
+      string,
+      { at: number; commandNames: Set<string>; id: string }
+    >();
+
+    for (const session of trainingDay) {
+      if (!Number.isFinite(session.at)) continue;
+      const key = `${session.at}\u0000${session.notes ?? ""}`;
+      const group = trainingGroups.get(key);
+      if (group) {
+        group.commandNames.add(session.commandName);
+      } else {
+        trainingGroups.set(key, {
+          at: session.at,
+          commandNames: new Set([session.commandName]),
+          id: String(session._id),
+        });
+      }
+    }
+
+    const trainingItems = Array.from(trainingGroups.values(), (group) => ({
+      id: group.id,
+      at: group.at,
+      kind: "training" as const,
+      label: t("training.label"),
+      detail: Array.from(group.commandNames).join(", "),
+    }));
+    return [...eventItems, ...trainingItems].sort((a, b) => a.at - b.at);
+  }, [activityTypesById, dayWindow, now, recent, t, trainingDay]);
 
   useEffect(() => {
     const sync = () => setNow(Date.now());
@@ -3324,15 +3836,27 @@ function DashboardPage({ dog }: { dog: DashboardDog }) {
     label: string,
     at: number,
     peePlace?: PeePlace,
+    allowWalkAttachment = true,
   ) => {
     const isPotty = isPottyKind(kind);
     const canAttach = kind !== "pee" || peePlace === "outside";
-    if (isPotty && canAttach && activeWalk === undefined) return;
+    if (
+      allowWalkAttachment &&
+      isPotty &&
+      canAttach &&
+      activeWalk === undefined
+    ) {
+      return false;
+    }
     const attachedWalk =
-      isPotty && canAttach && activeWalk && at >= activeWalk.at
+      allowWalkAttachment &&
+      isPotty &&
+      canAttach &&
+      activeWalk &&
+      at >= activeWalk.at
         ? activeWalk
         : null;
-    if (!beginOperation(kind)) return;
+    if (!beginOperation(kind)) return false;
     setFeedback("");
     setError("");
     try {
@@ -3351,8 +3875,9 @@ function DashboardPage({ dog }: { dog: DashboardDog }) {
               at,
               ...(kind === "pee" ? { peePlace } : {}),
             });
-      setLastCreatedId(eventId);
+      setUndoTarget({ eventId });
       setFeedback(t("feedback.logged", { dogName: dog.name, event: label }));
+      return true;
     } catch (caught) {
       setError(
         isPotty && hasErrorCode(caught, "WALK_NOT_ACTIVE")
@@ -3366,36 +3891,87 @@ function DashboardPage({ dog }: { dog: DashboardDog }) {
                   event: label,
                 }),
       );
+      return false;
+    } finally {
+      endOperation();
+    }
+  };
+
+  const startWalkForPotty = async (
+    kind: "pee" | "poop",
+    label: string,
+    at: number,
+    minutesAgo: number,
+  ) => {
+    if (!beginOperation(kind)) return false;
+    setFeedback("");
+    setError("");
+    try {
+      const created = await createWithPotty({
+        dogId: dog._id,
+        kind,
+        pottyAt: at,
+        walkStartedAt: at - minutesAgo * 60_000,
+        ...(kind === "pee" ? { peePlace: "outside" as const } : {}),
+      });
+      setUndoTarget({ eventId: created.eventId });
+      setFeedback(
+        t("feedback.walkAndPottyLogged", {
+          dogName: dog.name,
+          event: label,
+          minutes: minutesAgo,
+        }),
+      );
+      return true;
+    } catch (caught) {
+      setError(
+        hasErrorCode(caught, "WALK_ALREADY_ACTIVE")
+          ? t("feedback.walkStartedElsewhere")
+          : hasErrorCode(caught, "INVALID_WALK_INTERVAL")
+            ? t("feedback.walkOverlap")
+            : t("feedback.walkAndPottyError"),
+      );
+      return false;
     } finally {
       endOperation();
     }
   };
 
   const undo = async () => {
-    const eventId = lastCreatedId;
-    if (!eventId || !beginOperation("undo")) return;
+    const target = undoTarget;
+    if (!target || !beginOperation("undo")) return;
     setFeedback(t("feedback.removing"));
     setError("");
     try {
-      await removeEvent({ dogId: dog._id, eventId });
-      setLastCreatedId(null);
+      await (target.walkId
+        ? undoReconstruction({
+            dogId: dog._id,
+            eventId: target.eventId,
+            walkId: target.walkId,
+          })
+        : removeEvent({ dogId: dog._id, eventId: target.eventId }));
+      setUndoTarget(null);
       setFeedback(t("feedback.removed"));
-    } catch {
+    } catch (caught) {
       setFeedback("");
-      setError(t("feedback.undoError"));
+      setError(
+        hasErrorCode(caught, "RECONSTRUCTION_CHANGED")
+          ? t("feedback.reconstructionChanged")
+          : t("feedback.undoError"),
+      );
     } finally {
       endOperation();
     }
   };
 
-  const backdated = (eventId: Id<"events">, label: string) => {
-    setLastCreatedId(eventId);
+  const backdated = (target: UndoTarget, label: string) => {
+    setUndoTarget(target);
     setError("");
     setFeedback(t("feedback.logged", { dogName: dog.name, event: label }));
   };
 
   const walkTransition = (message: string) => {
-    setLastCreatedId(null);
+    setUndoTarget(null);
     setError("");
     setFeedback(message);
   };
@@ -3432,6 +4008,16 @@ function DashboardPage({ dog }: { dog: DashboardDog }) {
         training={trainingToday}
       />
 
+      {dayWindow && now !== null && (
+        <DayOverview
+          items={overviewItems}
+          startAt={dayWindow.startAt}
+          endAt={dayWindow.endAt}
+          now={now}
+          timezone={dog.timezone}
+        />
+      )}
+
       {dog.waterIntervalMinutes !== undefined && (
         <WaterTodaySummary
           count={
@@ -3452,15 +4038,14 @@ function DashboardPage({ dog }: { dog: DashboardDog }) {
           dog={dog}
           error={error}
           feedback={feedback}
-          lastCreatedId={lastCreatedId}
+          hasUndo={undoTarget !== null}
           latest={latest}
           onBackdated={backdated}
           onBackdateOperationEnd={endOperation}
           onBackdateOperationStart={startBackdateOperation}
           onError={setError}
-          onLog={(kind, label, at, peePlace) =>
-            void log(kind, label, at, peePlace)
-          }
+          onLog={log}
+          onStartWalkForPotty={startWalkForPotty}
           onUndo={() => void undo()}
           onWalkDiarySaved={walkDiarySaved}
           onWalkOperationStart={beginOperation}
@@ -3476,7 +4061,7 @@ function DashboardPage({ dog }: { dog: DashboardDog }) {
           dateFormatter={dateFormatter}
           dog={dog}
           now={now}
-          recent={recent}
+          recent={recent?.slice(0, 8)}
           timeFormatter={timeFormatter}
         />
       </div>

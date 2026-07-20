@@ -74,6 +74,37 @@ const dashboard = {
     drinks: "Dnešné napitia",
     loading: "Načítavame dnešný počet napití…",
   },
+  dayOverview: {
+    title: "Doterajší priebeh dňa",
+    aria: "Prehľad dnešných aktivít",
+    loading: "Načítavame prehľad dnešných aktivít…",
+    empty:
+      "Dnes zatiaľ nebola zaznamenaná žiadna aktivita. Záznamy sa tu objavia v priebehu dňa.",
+    updated: "Aktualizované o {{time}}",
+    activityCount_one: "{{formattedCount}} aktivita",
+    activityCount_few: "{{formattedCount}} aktivity",
+    activityCount_other: "{{formattedCount}} aktivít",
+    legend: {
+      aria: "Legenda prehľadu aktivít",
+      sleep: "Spánok a zdriemnutia",
+      walk: "Prechádzka",
+      events: "Udalosti",
+    },
+    ribbonAria: "Prehľad aktivít od polnoci po súčasnosť",
+    scrollAria: "Posúvateľný 24-hodinový prehľad aktivít",
+    scrollHint: "Päťhodinový pohľad · Ťuknite na bod · Potiahnite ↔",
+    now: "Teraz",
+    summary: {
+      rest: "{{duration}} odpočinku",
+      walk: "{{duration}} prechádzky",
+      activities_one: "{{formattedCount}} aktivita",
+      activities_few: "{{formattedCount}} aktivity",
+      activities_other: "{{formattedCount}} aktivít",
+    },
+    eventAria: "{{time}} · {{label}}{{detail}}",
+    clusterAria: "{{start}}–{{end}} · {{activities}}: {{labels}}",
+    durationAria: "{{label}} · {{start}}–{{end}} · {{duration}}",
+  },
   agenda: {
     kicker: "Denná karta",
     title: "Denný plán na dnes",
@@ -123,6 +154,14 @@ const dashboard = {
       "Táto prechádzka sa zmenila na inom zariadení. Teraz ju synchronizujeme.",
     endError: "Prechádzku sa nepodarilo ukončiť. Skúste to znova.",
   },
+  walkPrompt: {
+    title: "Ste na prechádzke?",
+    no: "Nie",
+    yes: "Áno",
+    whenStarted: "Kedy sa prechádzka začala?",
+    minutesAgo: "Pred {{count}} min",
+    starting: "Spúšťanie…",
+  },
   backdate: {
     open: "Záznam s podrobnosťami",
     aria: "Spätne zadaná udalosť",
@@ -140,6 +179,22 @@ const dashboard = {
     restConflict: "Tento čas je v rozpore s existujúcim priebehom spánku.",
     walkInactive:
       "Táto prechádzka už nie je aktívna. Skúste záznam uložiť znova ako samostatný.",
+    reconstruct: "Stalo sa to počas prechádzky",
+    reconstructHelp:
+      "Doplňte časovanie a vytvorte dokončenú prechádzku okolo tohto záznamu potreby.",
+    walkOffset: "Ako dlho po začiatku prechádzky?",
+    walkDuration: "Ako dlho trvala prechádzka?",
+    minutes: "{{count}} min",
+    other: "Iné",
+    customMinutes: "Vlastný počet minút pre pole {{field}}",
+    offsetRequired:
+      "Vyberte alebo zadajte, koľko minút po začiatku sa to stalo.",
+    durationRequired: "Vyberte alebo zadajte celkové trvanie prechádzky.",
+    durationTooShort: "Prechádzka musí trvať aspoň do času tejto potreby.",
+    walkEndFuture:
+      "Spätne vytvorená prechádzka sa nemôže skončiť v budúcnosti.",
+    walkOverlap: "Táto prechádzka sa prekrýva s inou. Vyberte iné časovanie.",
+    walkSummary: "Prechádzka {{start}}–{{end}} · {{event}} o {{eventAt}}",
     saveError:
       "Záznam sa nepodarilo uložiť. Nič sa nestratilo, skúste to znova.",
   },
@@ -251,10 +306,20 @@ const dashboard = {
       "Prechádzka bola ukončená na inom zariadení. Tento záznam o potrebe sa neuložil, skúste to znova.",
     pottyOutside:
       "Tento čas potreby je mimo aktívnej prechádzky. Skúste to znova.",
+    walkAndPottyLogged:
+      "Prechádzka začala pred {{minutes}} min a udalosť {{event}} pre {{dogName}} bola zaznamenaná.",
+    walkStartedElsewhere:
+      "Prechádzka bola spustená na inom zariadení. Zaznamenajte udalosť znova a pripojí sa k nej.",
+    walkOverlap:
+      "Tento čas začiatku sa prekrýva s inou prechádzkou. Vyberte novší začiatok.",
+    walkAndPottyError:
+      "Prechádzku a záznam potreby sa nepodarilo uložiť. Skúste to znova.",
     restChanged: "Stav spánku sa zmenil na inom zariadení. Skúste to znova.",
     removing: "Odstraňujeme posledný záznam…",
     removed: "Posledný záznam bol odstránený.",
     undoError: "Záznam sa nepodarilo vrátiť späť. Skúste to znova.",
+    reconstructionChanged:
+      "Prechádzka sa po uložení zmenila, preto ju nemožno bezpečne vrátiť späť.",
   },
   page: {
     syncingDay: "Synchronizujeme miestny deň",

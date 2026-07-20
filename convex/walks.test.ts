@@ -85,6 +85,21 @@ test("walk functions require authentication and dog membership", async () => {
     }),
   ).rejects.toThrow("FORBIDDEN");
   await expect(
+    stranger.mutation(api.walks.createWithPotty, {
+      dogId,
+      kind: "poop",
+      pottyAt: walkStart,
+      walkStartedAt: walkStart,
+    }),
+  ).rejects.toThrow("FORBIDDEN");
+  await expect(
+    stranger.mutation(api.walks.undoReconstruction, {
+      dogId,
+      eventId: walkId,
+      walkId,
+    }),
+  ).rejects.toThrow("FORBIDDEN");
+  await expect(
     stranger.mutation(api.walks.updateDiary, {
       dogId,
       walkId,
@@ -326,6 +341,196 @@ test("potty logs are linked and require an active walk", async () => {
       }),
     ]),
   );
+});
+
+test("creates active and completed walks with their potty atomically", async () => {
+  const { dogId, owner, t } = await setup();
+  const activePottyAt = walkStart + 5 * 60_000;
+  const active = await owner.mutation(api.walks.createWithPotty, {
+    dogId,
+    kind: "pee",
+    peePlace: "outside",
+    pottyAt: activePottyAt,
+    walkStartedAt: walkStart,
+    note: "  Near the gate  ",
+  });
+  await expect(owner.query(api.walks.active, { dogId })).resolves.toEqual(
+    expect.objectContaining({ _id: active.walkId, at: walkStart }),
+  );
+  expect(await t.run(({ db }) => db.get("events", active.eventId))).toEqual(
+    expect.objectContaining({
+      at: activePottyAt,
+      kind: "pee",
+      note: "Near the gate",
+      peePlace: "outside",
+      walkId: active.walkId,
+    }),
+  );
+
+  await owner.mutation(api.walks.end, {
+    dogId,
+    walkId: active.walkId,
+    endedAt: activePottyAt,
+  });
+  const completedStart = activePottyAt;
+  const completedPottyAt = completedStart + 5 * 60_000;
+  const completedEnd = completedStart + 20 * 60_000;
+  const completed = await owner.mutation(api.walks.createWithPotty, {
+    dogId,
+    kind: "poop",
+    pottyAt: completedPottyAt,
+    walkStartedAt: completedStart,
+    walkEndedAt: completedEnd,
+  });
+  expect(await t.run(({ db }) => db.get("events", completed.walkId))).toEqual(
+    expect.objectContaining({
+      at: completedStart,
+      endedAt: completedEnd,
+      kind: "walk",
+    }),
+  );
+  expect(await t.run(({ db }) => db.get("events", completed.eventId))).toEqual(
+    expect.objectContaining({ kind: "poop", walkId: completed.walkId }),
+  );
+});
+
+test("rejects invalid reconstructed potty intervals without partial rows", async () => {
+  const { dogId, owner, t } = await setup();
+  const invalid = [
+    {
+      kind: "pee" as const,
+      peePlace: "inside" as const,
+      pottyAt: walkStart + 5 * 60_000,
+      walkStartedAt: walkStart,
+      walkEndedAt: walkStart + 20 * 60_000,
+    },
+    {
+      kind: "poop" as const,
+      pottyAt: walkStart,
+      walkStartedAt: walkStart + 1,
+      walkEndedAt: walkStart + 20 * 60_000,
+    },
+    {
+      kind: "poop" as const,
+      pottyAt: walkStart + 10 * 60_000,
+      walkStartedAt: walkStart,
+      walkEndedAt: walkStart + 5 * 60_000,
+    },
+    {
+      kind: "poop" as const,
+      pottyAt: walkStart,
+      walkStartedAt: walkStart,
+      walkEndedAt: walkStart,
+    },
+  ];
+  for (const args of invalid) {
+    await expect(
+      owner.mutation(api.walks.createWithPotty, { dogId, ...args }),
+    ).rejects.toThrow("INVALID_WALK_INTERVAL");
+  }
+  await expect(
+    owner.mutation(api.walks.createWithPotty, {
+      dogId,
+      kind: "poop",
+      note: "x".repeat(501),
+      pottyAt: walkStart + 5 * 60_000,
+      walkStartedAt: walkStart,
+      walkEndedAt: walkStart + 20 * 60_000,
+    }),
+  ).rejects.toThrow("INVALID_NOTE");
+  expect(await t.run(({ db }) => db.query("events").collect())).toEqual([]);
+});
+
+test("reconstructs beside an active walk but rejects overlap", async () => {
+  const { dogId, owner, t } = await setup();
+  const activeAt = walkStart + 60 * 60_000;
+  await owner.mutation(api.walks.start, { dogId, at: activeAt });
+  const created = await owner.mutation(api.walks.createWithPotty, {
+    dogId,
+    kind: "poop",
+    pottyAt: walkStart + 30 * 60_000,
+    walkStartedAt: walkStart,
+    walkEndedAt: activeAt,
+  });
+  const count = await t.run(({ db }) => db.query("events").collect());
+  expect(count).toHaveLength(3);
+
+  await expect(
+    owner.mutation(api.walks.createWithPotty, {
+      dogId,
+      kind: "poop",
+      pottyAt: activeAt - 1,
+      walkStartedAt: walkStart + 30 * 60_000,
+      walkEndedAt: activeAt + 1,
+    }),
+  ).rejects.toThrow("INVALID_WALK_INTERVAL");
+  expect(await t.run(({ db }) => db.query("events").collect())).toHaveLength(3);
+  expect(created).toEqual({
+    eventId: expect.any(String),
+    walkId: expect.any(String),
+  });
+});
+
+test("concurrent active walk creation leaves one complete pair", async () => {
+  const { dogId, member, owner, t } = await setup();
+  const results = await Promise.allSettled([
+    owner.mutation(api.walks.createWithPotty, {
+      dogId,
+      kind: "pee",
+      peePlace: "outside",
+      pottyAt: walkStart + 5 * 60_000,
+      walkStartedAt: walkStart,
+    }),
+    member.mutation(api.walks.createWithPotty, {
+      dogId,
+      kind: "poop",
+      pottyAt: walkStart + 5 * 60_000,
+      walkStartedAt: walkStart,
+    }),
+  ]);
+  expect(results.filter(({ status }) => status === "fulfilled")).toHaveLength(
+    1,
+  );
+  const events = await t.run(({ db }) => db.query("events").collect());
+  expect(events).toHaveLength(2);
+  const walk = events.find(({ kind }) => kind === "walk");
+  const potty = events.find(({ kind }) => kind !== "walk");
+  expect(potty?.walkId).toBe(walk?._id);
+});
+
+test("undoes an unchanged reconstruction and refuses one with new events", async () => {
+  const { dogId, owner, ownerId, t } = await setup();
+  const create = () =>
+    owner.mutation(api.walks.createWithPotty, {
+      dogId,
+      kind: "poop",
+      pottyAt: walkStart + 5 * 60_000,
+      walkStartedAt: walkStart,
+      walkEndedAt: walkStart + 20 * 60_000,
+    });
+  const first = await create();
+  await expect(
+    owner.mutation(api.walks.undoReconstruction, { dogId, ...first }),
+  ).resolves.toBeNull();
+  await expect(
+    owner.mutation(api.walks.undoReconstruction, { dogId, ...first }),
+  ).resolves.toBeNull();
+  expect(await t.run(({ db }) => db.query("events").collect())).toEqual([]);
+
+  const second = await create();
+  await t.run(({ db }) =>
+    db.insert("events", {
+      dogId,
+      userId: ownerId,
+      kind: "poop",
+      at: walkStart + 10 * 60_000,
+      walkId: second.walkId,
+    }),
+  );
+  await expect(
+    owner.mutation(api.walks.undoReconstruction, { dogId, ...second }),
+  ).rejects.toThrow("RECONSTRUCTION_CHANGED");
+  expect(await t.run(({ db }) => db.query("events").collect())).toHaveLength(3);
 });
 
 test("end cannot precede linked potty logs and accepts their boundary", async () => {

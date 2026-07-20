@@ -211,6 +211,22 @@ table fallback for essential values. Direct labels are preferred over distant
 legends. Patterns, markers, or labels must distinguish series when color vision
 is limited. Empty and insufficient-data states explain what data is needed.
 
+### Activity chronology
+
+Daily activity uses the gentle surface/ink pairs defined in `src/index.css` for
+pee, poop, meal, water, treat, wake, sleep, walk, play, training, and notes.
+These colors categorize records; they never replace the visible time, label,
+stable symbol, or the dot-versus-duration-bar shape.
+
+On Home, screens at 640px and above show the complete proportional 24-hour
+ribbon. Narrower screens preserve the same graph in a horizontally scrollable
+five-hour window, initially showing four hours before Now and one hour after,
+with the full day available by touch, pointer, or keyboard scrolling. Labels
+are available by tapping the 44px event targets as well as hover and keyboard
+focus; tapping elsewhere or scrolling dismisses them. Timeline uses the same
+palette in a stable time/marker/content stream. Future time stays muted, dense
+points cluster, and exact records remain available in the chronological list.
+
 ## Anti-AI contract
 
 ### Do

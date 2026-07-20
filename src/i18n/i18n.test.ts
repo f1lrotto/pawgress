@@ -108,6 +108,24 @@ describe("i18n initialization", () => {
     await setLocale("en");
     expect(document.documentElement.lang).toBe("en");
   });
+
+  it("translates the walk prompt and reconstruction controls", async () => {
+    await setLocale("en");
+    expect(i18n.t("walkPrompt.title", { ns: "dashboard" })).toBe(
+      "Are you on a walk?",
+    );
+    expect(i18n.t("backdate.reconstruct", { ns: "dashboard" })).toBe(
+      "This happened during a walk",
+    );
+
+    await setLocale("sk");
+    expect(i18n.t("walkPrompt.title", { ns: "dashboard" })).toBe(
+      "Ste na prechádzke?",
+    );
+    expect(i18n.t("backdate.reconstruct", { ns: "dashboard" })).toBe(
+      "Stalo sa to počas prechádzky",
+    );
+  });
 });
 
 describe("localized formatting", () => {
