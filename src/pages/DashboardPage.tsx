@@ -19,6 +19,7 @@ import { Button } from "@/components/ui/button";
 import { formatNumber } from "@/i18n/format";
 import { resolveBrowserLocale } from "@/i18n/locale";
 import { getNextMealCountdown } from "@/lib/mealCountdown";
+import { parseDecimalInput } from "@/lib/number";
 import { deriveSleepState, formatElapsed, getElapsedMs } from "@/lib/timers";
 import { type TrainingRating, trainingRatings } from "@/lib/trainingRating";
 import {
@@ -1137,11 +1138,8 @@ function BackdateOptionalFields({
           </label>
           <input
             id="backdate-amount"
-            type="number"
+            type="text"
             inputMode="decimal"
-            min="0"
-            max="10000"
-            step="any"
             value={amount}
             aria-invalid={Boolean(errors.amount)}
             aria-describedby={
@@ -1225,7 +1223,7 @@ function BackdateForm({
     event.preventDefault();
     if (submitting.current) return;
     const normalizedNote = note.trim();
-    const amountValue = amount.trim() ? Number(amount) : undefined;
+    const amountValue = amount.trim() ? parseDecimalInput(amount) : undefined;
     const nextErrors = {
       amount:
         showsAmount &&
@@ -2536,7 +2534,7 @@ export function EventEditor({
       ? parseZonedDateTimeLocal(endedAt, dog.timezone)
       : null;
     const normalizedNote = note.trim();
-    const amountValue = amount.trim() ? Number(amount) : undefined;
+    const amountValue = amount.trim() ? parseDecimalInput(amount) : undefined;
     const atDirty = at !== initialAt;
     const endedAtDirty = showsEndedAt && endedAt !== initialEndedAt;
     const normalizedAmount = amountValue ?? null;
@@ -2692,11 +2690,8 @@ export function EventEditor({
               </label>
               <input
                 id={`edit-amount-${event._id}`}
-                type="number"
+                type="text"
                 inputMode="decimal"
-                min="0"
-                max="10000"
-                step="any"
                 value={amount}
                 aria-invalid={Boolean(errors.amount)}
                 aria-describedby={

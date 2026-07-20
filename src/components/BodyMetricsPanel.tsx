@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { formatNumber } from "@/i18n/format";
 import type { Locale } from "@/i18n/locale";
 import { getAgeParts } from "@/lib/age";
+import { parseDecimalInput } from "@/lib/number";
 import {
   formatZonedDateTimeLocal,
   getZonedDayKeys,
@@ -54,7 +55,7 @@ const parseDraft = (draft: Draft, emptyMessage: string, t: InsightsT) => {
   for (const { key } of fields) {
     const text = draft[key].trim();
     if (!text) continue;
-    const value = Number(text);
+    const value = parseDecimalInput(text);
     if (!Number.isFinite(value) || value <= 0 || value > 500) {
       return {
         error: { field: key, message: t("body.errors.invalid") },
@@ -142,11 +143,8 @@ function MetricFields({
           </label>
           <input
             id={`${prefix}-${key}`}
-            type="number"
+            type="text"
             inputMode="decimal"
-            min="0"
-            max="500"
-            step="any"
             value={draft[key]}
             aria-invalid={Boolean(errors[key])}
             aria-describedby={

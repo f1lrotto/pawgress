@@ -2325,7 +2325,7 @@ describe("DashboardPage backdating", () => {
       target: { value: "  Late breakfast  " },
     });
     fireEvent.change(screen.getByLabelText(/Amount/), {
-      target: { value: "125.5" },
+      target: { value: "125,5" },
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Log event" }));
@@ -2675,7 +2675,7 @@ describe("DashboardPage recent event actions", () => {
       "2026-07-08T21:10",
     );
     expect(screen.getByLabelText(/^Note\b/)).toHaveValue("  Kept note  ");
-    expect(screen.getByLabelText(/Amount/)).toHaveValue(85);
+    expect(screen.getByLabelText(/Amount/)).toHaveValue("85");
   });
 
   it("validates edit dates and describes every field error", () => {

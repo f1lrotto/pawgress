@@ -112,7 +112,7 @@ describe("BodyMetricsPanel", () => {
     render(<BodyMetricsPanel dog={dog} />);
     const form = screen.getByRole("form", { name: "Add body measurement" });
     fireEvent.change(within(form).getByLabelText("Weight (kg)"), {
-      target: { value: "5.25" },
+      target: { value: "5,25" },
     });
     fireEvent.change(within(form).getByLabelText("Chest (cm)"), {
       target: { value: "41" },
@@ -132,7 +132,7 @@ describe("BodyMetricsPanel", () => {
     expect(screen.getByRole("status")).toHaveTextContent(
       "Body measurement added.",
     );
-    expect(within(form).getByLabelText("Weight (kg)")).toHaveValue(null);
+    expect(within(form).getByLabelText("Weight (kg)")).toHaveValue("");
   });
 
   it("creates a dog-zone backdated measurement", async () => {
@@ -385,14 +385,14 @@ describe("BodyMetricsPanel", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "couldn't update",
     );
-    expect(within(form).getByLabelText("Weight (kg)")).toHaveValue(9);
+    expect(within(form).getByLabelText("Weight (kg)")).toHaveValue("9");
 
     convex.metrics = [second, { ...first, weightKg: 4.4 }];
     rerender(<BodyMetricsPanel dog={dog} />);
     const preserved = screen.getByRole("form", {
       name: "Edit body measurement",
     });
-    expect(within(preserved).getByLabelText("Weight (kg)")).toHaveValue(9);
+    expect(within(preserved).getByLabelText("Weight (kg)")).toHaveValue("9");
     expect(
       within(preserved).getByRole("button", { name: "Save changes" }),
     ).toBeVisible();

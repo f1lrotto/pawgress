@@ -104,7 +104,7 @@ describe("OnboardingPage", () => {
     expect(screen.getByLabelText("Birthday")).toHaveFocus();
   });
 
-  it("requires a positive weight and accepts a decimal", () => {
+  it("requires a positive weight and accepts a decimal comma", () => {
     render(<OnboardingPage />);
     enterPuppy();
     const weight = screen.getByLabelText("Current weight");
@@ -124,7 +124,7 @@ describe("OnboardingPage", () => {
     );
     expect(weight).toHaveFocus();
 
-    fireEvent.change(weight, { target: { value: "4.25" } });
+    fireEvent.change(weight, { target: { value: "4,25" } });
     fireEvent.click(screen.getByRole("button", { name: "Continue" }));
     expect(
       screen.getByRole("heading", { name: "When do meals happen?" }),
@@ -155,7 +155,7 @@ describe("OnboardingPage", () => {
     reachMeals();
 
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
-    expect(screen.getByLabelText("Current weight")).toHaveValue(4.25);
+    expect(screen.getByLabelText("Current weight")).toHaveValue("4.25");
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(screen.getByLabelText("Puppy name")).toHaveValue("Zoe");
     expect(screen.getByLabelText("Birthday")).toHaveValue("2024-01-15");
@@ -219,7 +219,7 @@ describe("OnboardingPage", () => {
   });
 
   it("sends a normalized payload to the onboarding mutation", async () => {
-    reachMeals("4.25", "  Zoe  ");
+    reachMeals("4,25", "  Zoe  ");
     fireEvent.click(screen.getByRole("button", { name: "Add another meal" }));
     const names = screen.getAllByLabelText("Meal name");
     const times = screen.getAllByLabelText("Time");
@@ -287,7 +287,7 @@ describe("OnboardingPage", () => {
     await waitFor(() => expect(dispatchBeforeUnload()).toBe(true));
     expect(screen.getByLabelText("Meal name")).toHaveValue("  Morning meal  ");
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
-    expect(screen.getByLabelText("Current weight")).toHaveValue(5.75);
+    expect(screen.getByLabelText("Current weight")).toHaveValue("5.75");
     fireEvent.click(screen.getByRole("button", { name: "Back" }));
     expect(screen.getByLabelText("Puppy name")).toHaveValue("Zoe");
     expect(screen.getByLabelText("Birthday")).toHaveValue("2024-01-15");

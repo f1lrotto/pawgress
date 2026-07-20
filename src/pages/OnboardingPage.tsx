@@ -12,6 +12,7 @@ import { api } from "../../convex/_generated/api";
 import BrandLockup from "@/components/BrandLockup";
 import RedeemInviteForm from "@/components/RedeemInviteForm";
 import { Button } from "@/components/ui/button";
+import { parseDecimalInput } from "@/lib/number";
 
 type Step = 1 | 2 | 3;
 type Meal = { id: number; label: string; timeOfDay: string };
@@ -254,11 +255,8 @@ function WeightStep({
           <input
             id="weight"
             name="weight"
-            type="number"
+            type="text"
             inputMode="decimal"
-            min="0"
-            max={maxWeightKg}
-            step="any"
             value={weight}
             aria-invalid={Boolean(weightError)}
             aria-describedby={
@@ -529,7 +527,7 @@ function OnboardingPage() {
 
   const submitWeight = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const value = Number(weight);
+    const value = parseDecimalInput(weight);
     const nextError =
       !weight.trim() || !Number.isFinite(value) || value <= 0
         ? "errors.weightPositive"
@@ -621,7 +619,7 @@ function OnboardingPage() {
           ),
         name: name.trim(),
         timezone,
-        weightKg: Number(weight),
+        weightKg: parseDecimalInput(weight),
       });
     } catch {
       setSaveError(true);
