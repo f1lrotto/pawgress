@@ -92,11 +92,32 @@ const dog = {
 const waterDog = { ...dog, waterIntervalMinutes: 120 };
 const render = (ui: ReactNode) =>
   testingLibraryRender(ui, { wrapper: MemoryRouter });
+const getDailySummary = () =>
+  screen.getByRole("region", { name: "Today with Milo" });
 const getSummaryItem = (label: string) =>
   screen.getByText(label, { selector: "dt" }).parentElement!;
+const chooseBathroomAction = (
+  name: "Log pee · Inside" | "Log pee · Outside" | "Log Poop",
+) => {
+  fireEvent.click(screen.getByRole("button", { name: "Log bathroom" }));
+  fireEvent.click(
+    within(screen.getByRole("group", { name: "Bathroom actions" })).getByRole(
+      "button",
+      { name },
+    ),
+  );
+};
 const logStandalone = (label: "Pee" | "Poop") => {
-  fireEvent.click(screen.getByRole("button", { name: `Log ${label}` }));
+  chooseBathroomAction(label === "Pee" ? "Log pee · Outside" : "Log Poop");
   fireEvent.click(screen.getByRole("button", { name: "No" }));
+};
+const openEarlierWalkStart = () => {
+  fireEvent.click(screen.getByRole("button", { name: "Earlier" }));
+  fireEvent.click(screen.getByRole("button", { name: "Start walk" }));
+};
+const openEarlierWalkEnd = () => {
+  fireEvent.click(screen.getByRole("button", { name: "Earlier" }));
+  fireEvent.click(screen.getByRole("button", { name: "End walk" }));
 };
 const mealEvent = (overrides: Record<string, unknown> = {}) => ({
   _creationTime: Date.parse("2026-07-09T07:30:00Z"),
@@ -197,6 +218,12 @@ beforeEach(() => {
   HTMLDialogElement.prototype.close = function () {
     this.open = false;
     this.dispatchEvent(new Event("close"));
+  };
+  HTMLElement.prototype.showPopover = function () {
+    this.removeAttribute("popover");
+  };
+  HTMLElement.prototype.hidePopover = function () {
+    this.setAttribute("popover", "auto");
   };
 });
 
@@ -358,9 +385,7 @@ describe("DashboardPage quick logging", () => {
     expect(
       within(dialog).queryByRole("checkbox", { name: "Archived game" }),
     ).not.toBeInTheDocument();
-    fireEvent.click(
-      within(dialog).getByRole("button", { name: "Save enrichment" }),
-    );
+    fireEvent.click(within(dialog).getByRole("button", { name: /^Save$/ }));
 
     await waitFor(() =>
       expect(convex.playsLog).toHaveBeenCalledWith({
@@ -393,9 +418,7 @@ describe("DashboardPage quick logging", () => {
     const dialog = screen.getByRole("dialog", { name: "Log enrichment" });
     fireEvent.click(within(dialog).getByRole("button", { name: "30 min ago" }));
     fireEvent.click(within(dialog).getByRole("checkbox", { name: "Tug" }));
-    fireEvent.click(
-      within(dialog).getByRole("button", { name: "Save enrichment" }),
-    );
+    fireEvent.click(within(dialog).getByRole("button", { name: /^Save$/ }));
 
     await waitFor(() =>
       expect(convex.playsLog).toHaveBeenCalledWith({
@@ -432,9 +455,7 @@ describe("DashboardPage quick logging", () => {
     expect(
       within(dialog).queryByRole("checkbox", { name: "Tug" }),
     ).not.toBeInTheDocument();
-    fireEvent.click(
-      within(dialog).getByRole("button", { name: "Save enrichment" }),
-    );
+    fireEvent.click(within(dialog).getByRole("button", { name: /^Save$/ }));
 
     expect(await within(dialog).findByRole("alert")).toHaveTextContent(
       "Select at least one activity.",
@@ -444,9 +465,7 @@ describe("DashboardPage quick logging", () => {
     fireEvent.click(
       within(dialog).getByRole("checkbox", { name: "Snuffle mat" }),
     );
-    fireEvent.click(
-      within(dialog).getByRole("button", { name: "Save enrichment" }),
-    );
+    fireEvent.click(within(dialog).getByRole("button", { name: /^Save$/ }));
     await waitFor(() =>
       expect(convex.playsLog).toHaveBeenCalledWith({
         activityTypeIds: ["snuffle-id"],
@@ -494,9 +513,7 @@ describe("DashboardPage quick logging", () => {
     fireEvent.click(screen.getByRole("button", { name: "Log enrichment" }));
     const dialog = screen.getByRole("dialog", { name: "Log enrichment" });
     fireEvent.click(within(dialog).getByRole("checkbox", { name: "Tug" }));
-    const save = within(dialog).getByRole("button", {
-      name: "Save enrichment",
-    });
+    const save = within(dialog).getByRole("button", { name: /^Save$/ });
     fireEvent.click(save);
     fireEvent.click(save);
 
@@ -509,7 +526,7 @@ describe("DashboardPage quick logging", () => {
       "We couldn't save that enrichment. Try again.",
     );
     expect(
-      within(dialog).getByRole("button", { name: "Save enrichment" }),
+      within(dialog).getByRole("button", { name: /^Save$/ }),
     ).toBeEnabled();
   });
 
@@ -526,28 +543,73 @@ describe("DashboardPage quick logging", () => {
 
   it("connects every quick action to its state description", () => {
     render(<DashboardPage dog={dog} />);
-    const quickLog = screen
-      .getByRole("heading", { level: 2, name: "Log an activity" })
-      .closest("section")!;
+    const quickLog = getDailySummary();
     const actionGroup = within(quickLog).getByRole("group", {
-      name: "Log an activity",
+      name: "Today’s status and logging actions",
     });
 
     expect(
       within(actionGroup).getByRole("button", { name: "Log training" }),
     ).not.toHaveClass("col-span-2");
 
-    ["Pee", "Poop", "Meal", "Treat", "Woke up", "Fell asleep"].forEach(
-      (label) => {
-        const button = within(actionGroup).getByRole("button", {
-          name: `Log ${label}`,
-        });
-        const descriptionId = button.getAttribute("aria-describedby");
+    ["Meal", "Treat"].forEach((label) => {
+      const button = within(actionGroup).getByRole("button", {
+        name: `Log ${label}`,
+      });
+      const descriptionId = button.getAttribute("aria-describedby");
 
-        expect(descriptionId).toBeTruthy();
-        expect(quickLog.querySelector(`[id="${descriptionId}"]`)).toBeVisible();
-      },
-    );
+      expect(descriptionId).toBeTruthy();
+      expect(quickLog.querySelector(`[id="${descriptionId}"]`)).toBeVisible();
+    });
+    const bathroom = within(actionGroup).getByRole("button", {
+      name: "Log bathroom",
+    });
+    expect(bathroom).toHaveAttribute("aria-describedby", "quick-state-pee");
+    expect(bathroom).toHaveAttribute("aria-expanded", "false");
+    expect(bathroom).toHaveAttribute("aria-controls", "bathroom-action-tray");
+    expect(bathroom).toHaveClass("size-11", "rounded-lg");
+
+    const rest = within(actionGroup).getByRole("button", {
+      name: "Set rest state",
+    });
+    expect(rest).toHaveAttribute("aria-describedby", "quick-state-rest");
+    expect(rest).toHaveAttribute("aria-haspopup", "dialog");
+    expect(rest.querySelector('[data-action-glyph="rest"]')).toBeVisible();
+    expect(
+      within(actionGroup)
+        .getByRole("button", { name: "Start walk" })
+        .querySelector('[data-action-glyph="play"]'),
+    ).toBeVisible();
+  });
+
+  it("offers all three bathroom actions from one compact control", () => {
+    render(<DashboardPage dog={dog} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Log bathroom" }));
+    const tray = screen.getByRole("group", { name: "Bathroom actions" });
+    const close = screen.getByRole("button", {
+      name: "Close bathroom actions",
+    });
+
+    expect(close).toHaveAttribute("aria-expanded", "true");
+
+    const firstAction = within(tray).getByRole("button", {
+      name: "Log pee · Inside",
+    });
+    expect(firstAction).toBeEnabled();
+    expect(firstAction).toHaveFocus();
+    expect(
+      within(tray).getByRole("button", { name: "Log pee · Outside" }),
+    ).toBeEnabled();
+    expect(
+      within(tray).getByRole("button", { name: "Log Poop" }),
+    ).toBeEnabled();
+
+    fireEvent.keyDown(tray, { key: "Escape" });
+    expect(
+      screen.queryByRole("group", { name: "Bathroom actions" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Log bathroom" })).toHaveFocus();
   });
 
   it("renders Slovak copy, ARIA labels, durations, and amounts", async () => {
@@ -569,11 +631,14 @@ describe("DashboardPage quick logging", () => {
     act(() => vi.advanceTimersByTime(0));
 
     expect(
-      screen.getByRole("heading", { level: 1, name: "Ahoj, Milo." }),
+      screen.getByRole("heading", {
+        level: 1,
+        name: "Dnes s Milo",
+      }),
     ).toBeVisible();
     expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
     expect(
-      screen.getByRole("button", { name: "Zaznamenať udalosť Cikanie" }),
+      screen.getByRole("button", { name: "Zaznamenať potrebu" }),
     ).toBeVisible();
     expect(
       within(getSummaryItem("Od posledného jedla")).getByText("2 h 13 min"),
@@ -592,7 +657,6 @@ describe("DashboardPage quick logging", () => {
     ["Poop", "poop"],
     ["Meal", "meal"],
     ["Treat", "treat"],
-    ["Woke up", "wake"],
     ["Fell asleep", "sleep"],
   ] as const)(
     "logs %s with dog attribution and the current time",
@@ -600,9 +664,19 @@ describe("DashboardPage quick logging", () => {
       vi.spyOn(Date, "now").mockReturnValue(123_456);
       render(<DashboardPage dog={dog} />);
 
-      fireEvent.click(screen.getByRole("button", { name: `Log ${label}` }));
       if (kind === "pee" || kind === "poop") {
+        chooseBathroomAction(kind === "pee" ? "Log pee · Outside" : "Log Poop");
         fireEvent.click(screen.getByRole("button", { name: "No" }));
+      } else if (kind === "sleep") {
+        fireEvent.click(screen.getByRole("button", { name: "Set rest state" }));
+        fireEvent.click(
+          within(screen.getByRole("dialog", { name: "Rest" })).getByRole(
+            "button",
+            { name: "Log Fell asleep" },
+          ),
+        );
+      } else {
+        fireEvent.click(screen.getByRole("button", { name: `Log ${label}` }));
       }
 
       await waitFor(() =>
@@ -639,7 +713,7 @@ describe("DashboardPage quick logging", () => {
       screen.queryByRole("button", { name: "Log Drank water" }),
     ).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("region", { name: "Water today" }),
+      screen.queryByRole("heading", { name: "Water" }),
     ).not.toBeInTheDocument();
     disabled.unmount();
 
@@ -657,17 +731,12 @@ describe("DashboardPage quick logging", () => {
     render(<DashboardPage dog={waterDog} />);
     act(() => vi.advanceTimersByTime(0));
 
-    const water = screen.getByRole("region", { name: "Water today" });
+    const summary = getDailySummary();
     expect(
-      within(getSummaryItem("Drinks logged today")).getByText("3×"),
-    ).toBeInTheDocument();
-    expect(
-      within(getSummaryItem("Drink again")).getByText("1h 30m"),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("region", { name: "Right now" }).querySelectorAll("dt"),
-    ).toHaveLength(6);
-    expect(water).toContainElement(getSummaryItem("Drinks logged today"));
+      within(summary).getByRole("heading", { name: "Water" }),
+    ).toBeVisible();
+    expect(within(summary).getByText("3 drinks today · 1h 30m")).toBeVisible();
+    expect(within(summary).getAllByRole("term")).toHaveLength(5);
     expect(convex.queryCalls).toContainEqual({
       name: "events:waterCount",
       args: {
@@ -702,7 +771,7 @@ describe("DashboardPage quick logging", () => {
     vi.spyOn(Date, "now").mockReturnValue(at);
     render(<DashboardPage dog={dog} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Log Poop" }));
+    chooseBathroomAction("Log Poop");
     const dialog = screen.getByRole("dialog", { name: "Are you on a walk?" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Yes" }));
     await waitFor(() =>
@@ -743,7 +812,7 @@ describe("DashboardPage quick logging", () => {
         }),
     );
     render(<DashboardPage dog={dog} />);
-    fireEvent.click(screen.getByRole("button", { name: "Log Poop" }));
+    chooseBathroomAction("Log Poop");
     const dialog = screen.getByRole("dialog", { name: "Are you on a walk?" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Yes" }));
     fireEvent.click(within(dialog).getByRole("button", { name: "3 min ago" }));
@@ -768,7 +837,7 @@ describe("DashboardPage quick logging", () => {
       new Error("INVALID_WALK_INTERVAL"),
     );
     render(<DashboardPage dog={dog} />);
-    fireEvent.click(screen.getByRole("button", { name: "Log Poop" }));
+    chooseBathroomAction("Log Poop");
     const dialog = screen.getByRole("dialog", { name: "Are you on a walk?" });
     fireEvent.click(within(dialog).getByRole("button", { name: "Yes" }));
     fireEvent.click(within(dialog).getByRole("button", { name: "15 min ago" }));
@@ -787,7 +856,7 @@ describe("DashboardPage quick logging", () => {
     vi.spyOn(Date, "now").mockReturnValue(at);
     render(<DashboardPage dog={dog} />);
     fireEvent.click(screen.getByRole("button", { name: "Earlier" }));
-    fireEvent.click(screen.getByRole("button", { name: "Log Poop" }));
+    chooseBathroomAction("Log Poop");
 
     expect(
       screen.queryByRole("dialog", { name: "Are you on a walk?" }),
@@ -836,6 +905,34 @@ describe("DashboardPage quick logging", () => {
       }),
     );
     expect(dialog).not.toHaveAttribute("open");
+  });
+
+  it("uses the global Earlier mode when setting the initial rest state", async () => {
+    const at = Date.parse("2026-07-09T12:00:00Z");
+    vi.spyOn(Date, "now").mockReturnValue(at);
+    render(<DashboardPage dog={dog} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Earlier" }));
+    fireEvent.click(screen.getByRole("button", { name: "Set rest state" }));
+    fireEvent.click(
+      within(screen.getByRole("dialog", { name: "Rest" })).getByRole("button", {
+        name: "Log Fell asleep",
+      }),
+    );
+
+    const dialog = screen.getByRole("dialog", { name: "When did it happen?" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "5 min ago" }));
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Log Fell asleep" }),
+    );
+
+    await waitFor(() =>
+      expect(convex.log).toHaveBeenCalledWith({
+        at: at - 5 * 60_000,
+        dogId,
+        kind: "sleep",
+      }),
+    );
   });
 
   it("logs an earlier activity at an exact dog-local time", async () => {
@@ -917,7 +1014,7 @@ describe("DashboardPage quick logging", () => {
     expect(
       await screen.findByRole("button", { name: "Log Meal" }),
     ).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Log Pee" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Log bathroom" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Start walk" })).toBeDisabled();
     expect(
       screen.getByRole("button", { name: "Log with details" }),
@@ -937,7 +1034,7 @@ describe("DashboardPage quick logging", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "We couldn't log “Poop”. Try again.",
     );
-    expect(screen.getByRole("button", { name: "Log Poop" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Log bathroom" })).toBeEnabled();
   });
 
   it("undoes the most recently created event", async () => {
@@ -981,7 +1078,7 @@ describe("DashboardPage quick logging", () => {
     expect(
       await screen.findByRole("button", { name: "Undoing…" }),
     ).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Log Pee" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Log bathroom" })).toBeDisabled();
     expect(
       screen.getByRole("button", { name: "Log with details" }),
     ).toBeDisabled();
@@ -1027,34 +1124,48 @@ describe("DashboardPage quick logging", () => {
 });
 
 describe("DashboardPage sleep controls", () => {
-  it("disables rest actions while their latest state is loading", () => {
+  it("disables the default rest action while its latest state is loading", () => {
     convex.latest = undefined;
     render(<DashboardPage dog={dog} />);
 
-    const wake = screen.getByRole("button", { name: "Log Woke up" });
     const sleep = screen.getByRole("button", { name: "Log Fell asleep" });
-    expect(wake).toBeDisabled();
     expect(sleep).toBeDisabled();
-    expect(wake).toHaveTextContent("Checking rest state");
-    expect(sleep).toHaveTextContent("Checking rest state");
-    expect(screen.getByRole("button", { name: "Log Pee" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Log Woke up" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Log bathroom" })).toBeEnabled();
   });
 
-  it("enables either initial rest transition when no state exists", () => {
+  it("asks for the initial rest state when no history exists", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(321_000);
     render(<DashboardPage dog={dog} />);
 
-    expect(screen.getByRole("button", { name: "Log Woke up" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Set rest state" }));
+    const dialog = screen.getByRole("dialog", { name: "Rest" });
     expect(
-      screen.getByRole("button", { name: "Log Fell asleep" }),
-    ).toBeEnabled();
+      within(dialog).getByRole("button", { name: "Log Woke up" }),
+    ).toHaveTextContent("Awake");
+    expect(
+      within(dialog).getByRole("button", { name: "Log Fell asleep" }),
+    ).toHaveTextContent("Asleep");
+
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Log Woke up" }),
+    );
+    await waitFor(() =>
+      expect(convex.log).toHaveBeenCalledWith({
+        at: 321_000,
+        dogId,
+        kind: "wake",
+      }),
+    );
+    expect(dialog).not.toHaveAttribute("open");
   });
 
   it.each([
-    ["awake", { at: 200 }, { at: 100 }, true, false],
-    ["asleep", { at: 100 }, { at: 200 }, false, true],
+    ["awake", { at: 200 }, { at: 100 }, "Log Fell asleep", "Log Woke up"],
+    ["asleep", { at: 100 }, { at: 200 }, "Log Woke up", "Log Fell asleep"],
   ] as const)(
-    "only enables the next transition while %s",
-    (_, wakeEvent, sleepEvent, wakeDisabled, sleepDisabled) => {
+    "shows only the next transition while %s",
+    (_, wakeEvent, sleepEvent, nextAction, currentAction) => {
       convex.latest = {
         meal: null,
         pee: null,
@@ -1065,12 +1176,17 @@ describe("DashboardPage sleep controls", () => {
       };
       render(<DashboardPage dog={dog} />);
 
+      expect(screen.getByRole("button", { name: nextAction })).toBeEnabled();
       expect(
-        screen.getByRole("button", { name: "Log Woke up" }),
-      ).toHaveProperty("disabled", wakeDisabled);
+        screen
+          .getByRole("button", { name: nextAction })
+          .querySelector(
+            `[data-action-glyph="${nextAction === "Log Woke up" ? "wake" : "sleep"}"]`,
+          ),
+      ).toBeVisible();
       expect(
-        screen.getByRole("button", { name: "Log Fell asleep" }),
-      ).toHaveProperty("disabled", sleepDisabled);
+        screen.queryByRole("button", { name: currentAction }),
+      ).not.toBeInTheDocument();
     },
   );
 
@@ -1098,11 +1214,10 @@ describe("DashboardPage sleep controls", () => {
       }),
     );
     expect(convex.log).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole("button", { name: "Log Woke up" })).toBeDisabled();
     expect(
       screen.getByRole("button", { name: "Log Fell asleep" }),
     ).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Log Pee" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Log bathroom" })).toBeDisabled();
 
     finish();
     await waitFor(() => expect(sleep).toBeEnabled());
@@ -1121,7 +1236,9 @@ describe("DashboardPage sleep controls", () => {
     expect(
       screen.getByRole("button", { name: "Log Fell asleep" }),
     ).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Log Woke up" })).toBeDisabled();
+    expect(
+      screen.queryByRole("button", { name: "Log Woke up" }),
+    ).not.toBeInTheDocument();
   });
 
   it("maps a backdated sequence conflict to the datetime field", async () => {
@@ -1190,11 +1307,9 @@ describe("DashboardPage walk controls", () => {
     expect(
       screen.getByRole("button", { name: "Checking walk…" }),
     ).toBeDisabled();
-    expect(
-      within(screen.getByRole("region", { name: "Right now" })).getByRole(
-        "status",
-      ),
-    ).toHaveTextContent("Syncing…");
+    expect(within(getDailySummary()).getByRole("status")).toHaveTextContent(
+      "Opening today’s activity…",
+    );
 
     convex.activeWalk = null;
     convex.latest = {
@@ -1238,7 +1353,7 @@ describe("DashboardPage walk controls", () => {
     );
     expect(convex.walkStart).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("button", { name: "Starting…" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Log Pee" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Log bathroom" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
     expect(
       screen.getByRole("button", { name: "Log with details" }),
@@ -1269,7 +1384,7 @@ describe("DashboardPage walk controls", () => {
     const localDog = { ...dog, timezone: "Asia/Tokyo" };
     const { rerender } = render(<DashboardPage dog={localDog} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Start another time" }));
+    openEarlierWalkStart();
     expect(screen.getByLabelText("Walk start time")).toHaveValue(
       "2026-07-09T09:05",
     );
@@ -1279,7 +1394,7 @@ describe("DashboardPage walk controls", () => {
     convex.activeWalk = walk;
     convex.latest!.walk = walk;
     rerender(<DashboardPage dog={localDog} />);
-    fireEvent.click(screen.getByRole("button", { name: "Choose end time" }));
+    openEarlierWalkEnd();
     expect(screen.getByLabelText("Walk end time")).toHaveValue(
       "2026-07-09T09:05",
     );
@@ -1289,7 +1404,7 @@ describe("DashboardPage walk controls", () => {
   it("submits a dog-local backdated start and collapses after success", async () => {
     vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-07-09T12:00:00Z"));
     render(<DashboardPage dog={{ ...dog, timezone: "Asia/Tokyo" }} />);
-    fireEvent.click(screen.getByRole("button", { name: "Start another time" }));
+    openEarlierWalkStart();
     fireEvent.change(screen.getByLabelText("Walk start time"), {
       target: { value: "2026-07-09T09:15" },
     });
@@ -1315,7 +1430,7 @@ describe("DashboardPage walk controls", () => {
   it("validates empty, birthday, and future walk start times", () => {
     vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-07-09T12:00:00Z"));
     render(<DashboardPage dog={dog} />);
-    fireEvent.click(screen.getByRole("button", { name: "Start another time" }));
+    openEarlierWalkStart();
     const at = screen.getByLabelText("Walk start time");
     const submit = screen.getByRole("button", {
       name: "Start walk at this time",
@@ -1355,7 +1470,7 @@ describe("DashboardPage walk controls", () => {
         }),
     );
     render(<DashboardPage dog={dog} />);
-    fireEvent.click(screen.getByRole("button", { name: "Start another time" }));
+    openEarlierWalkStart();
     const submit = screen.getByRole("button", {
       name: "Start walk at this time",
     });
@@ -1368,7 +1483,7 @@ describe("DashboardPage walk controls", () => {
     ).toBeDisabled();
     expect(screen.getByLabelText("Walk start time")).toBeDisabled();
     expect(screen.getByRole("button", { name: "Start walk" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Log Pee" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Log bathroom" })).toBeDisabled();
     expect(
       screen.getByRole("button", { name: "Log with details" }),
     ).toBeDisabled();
@@ -1397,9 +1512,7 @@ describe("DashboardPage walk controls", () => {
     async (code, message) => {
       convex.walkStart.mockRejectedValue(new Error(code));
       render(<DashboardPage dog={dog} />);
-      fireEvent.click(
-        screen.getByRole("button", { name: "Start another time" }),
-      );
+      openEarlierWalkStart();
       fireEvent.change(screen.getByLabelText("Walk start time"), {
         target: { value: "2026-07-08T20:15" },
       });
@@ -1425,7 +1538,9 @@ describe("DashboardPage walk controls", () => {
     convex.latest!.walk = walk;
     render(<DashboardPage dog={dog} />);
     act(() => vi.advanceTimersByTime(0));
-    const active = screen.getByRole("region", { name: "Walk in progress" });
+    const active = within(getDailySummary()).getByRole("group", {
+      name: "Walk",
+    });
 
     expect(
       within(active).getByText(
@@ -1464,9 +1579,10 @@ describe("DashboardPage walk controls", () => {
         }),
     );
     render(<DashboardPage dog={dog} />);
-    fireEvent.click(screen.getByRole("button", { name: "Log Pee" }));
+    chooseBathroomAction("Log pee · Outside");
     await screen.findByText("Pee logged for Milo.");
     const end = screen.getByRole("button", { name: "End walk" });
+    expect(end.querySelector('[data-action-glyph="stop"]')).toBeVisible();
 
     fireEvent.click(end);
     fireEvent.click(end);
@@ -1480,7 +1596,7 @@ describe("DashboardPage walk controls", () => {
     );
     expect(convex.walkEnd).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("button", { name: "Ending…" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Log Pee" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Log bathroom" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Undo" })).toBeDisabled();
 
     finish();
@@ -1498,7 +1614,7 @@ describe("DashboardPage walk controls", () => {
     convex.latest!.walk = walk;
     convex.walkEnd.mockResolvedValue(at + 60 * 60_000);
     render(<DashboardPage dog={{ ...dog, timezone: "Asia/Tokyo" }} />);
-    fireEvent.click(screen.getByRole("button", { name: "Choose end time" }));
+    openEarlierWalkEnd();
     fireEvent.change(screen.getByLabelText("Walk end time"), {
       target: { value: "2026-07-09T10:30" },
     });
@@ -1529,7 +1645,7 @@ describe("DashboardPage walk controls", () => {
     convex.activeWalk = walk;
     convex.latest!.walk = walk;
     render(<DashboardPage dog={dog} />);
-    fireEvent.click(screen.getByRole("button", { name: "Choose end time" }));
+    openEarlierWalkEnd();
     fireEvent.change(screen.getByLabelText("Walk end time"), {
       target: { value: "2026-07-09T09:59" },
     });
@@ -1552,7 +1668,7 @@ describe("DashboardPage walk controls", () => {
     convex.latest!.walk = walk;
     convex.walkEnd.mockRejectedValue(new Error("INVALID_WALK_DURATION"));
     render(<DashboardPage dog={dog} />);
-    fireEvent.click(screen.getByRole("button", { name: "Choose end time" }));
+    openEarlierWalkEnd();
     fireEvent.change(screen.getByLabelText("Walk end time"), {
       target: { value: "2026-07-09T11:00" },
     });
@@ -1578,7 +1694,7 @@ describe("DashboardPage walk controls", () => {
     convex.latest!.walk = walk;
     convex.walkEnd.mockRejectedValue(new Error("network"));
     render(<DashboardPage dog={dog} />);
-    fireEvent.click(screen.getByRole("button", { name: "Choose end time" }));
+    openEarlierWalkEnd();
     fireEvent.change(screen.getByLabelText("Walk end time"), {
       target: { value: "2026-07-09T11:00" },
     });
@@ -1621,12 +1737,7 @@ describe("DashboardPage walk potty attachment", () => {
     convex.activeWalk = undefined;
     render(<DashboardPage dog={dog} />);
 
-    const pee = screen.getByRole("button", { name: "Log Pee" });
-    const poop = screen.getByRole("button", { name: "Log Poop" });
-    expect(pee).toBeDisabled();
-    expect(poop).toBeDisabled();
-    expect(pee).toHaveTextContent("Checking walk…");
-    expect(poop).toHaveTextContent("Checking walk…");
+    expect(screen.getByRole("button", { name: "Log bathroom" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Log Meal" })).toBeEnabled();
   });
 
@@ -1637,11 +1748,10 @@ describe("DashboardPage walk potty attachment", () => {
     convex.activeWalk = walk;
     convex.latest!.walk = walk;
     render(<DashboardPage dog={dog} />);
-    const pee = screen.getByRole("button", { name: "Log Pee" });
+    const bathroom = screen.getByRole("button", { name: "Log bathroom" });
 
-    expect(pee).toHaveTextContent("During walk");
-    expect(pee).toHaveAttribute("aria-describedby", "quick-state-pee");
-    fireEvent.click(pee);
+    expect(bathroom).toHaveAttribute("aria-describedby", "quick-state-pee");
+    chooseBathroomAction("Log pee · Outside");
 
     await waitFor(() =>
       expect(convex.pottyLog).toHaveBeenCalledWith({
@@ -1696,7 +1806,7 @@ describe("DashboardPage walk potty attachment", () => {
     convex.activeWalk = walkEvent();
     render(<DashboardPage dog={dog} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Log pee · Inside" }));
+    chooseBathroomAction("Log pee · Inside");
 
     await waitFor(() =>
       expect(convex.log).toHaveBeenCalledWith({
@@ -1746,11 +1856,13 @@ describe("DashboardPage walk potty attachment", () => {
       minute: "2-digit",
       timeZone: "UTC",
     });
-    expect(screen.getByRole("status")).toHaveTextContent(
-      `Walk ${formatter.format(pottyAt - 5 * 60_000)}–${formatter.format(
-        pottyAt + 25 * 60_000,
-      )} · Pee at ${formatter.format(pottyAt)}`,
-    );
+    expect(
+      screen.getByText(
+        `Walk ${formatter.format(pottyAt - 5 * 60_000)}–${formatter.format(
+          pottyAt + 25 * 60_000,
+        )} · Pee at ${formatter.format(pottyAt)}`,
+      ),
+    ).toHaveAttribute("role", "status");
     fireEvent.click(screen.getByRole("button", { name: "Log event" }));
 
     await waitFor(() =>
@@ -1829,15 +1941,15 @@ describe("DashboardPage walk potty attachment", () => {
         }),
     );
     render(<DashboardPage dog={dog} />);
-    const pee = screen.getByRole("button", { name: "Log Pee" });
+    const bathroom = screen.getByRole("button", { name: "Log bathroom" });
 
-    fireEvent.click(pee);
-    fireEvent.click(pee);
+    chooseBathroomAction("Log pee · Outside");
+    fireEvent.click(bathroom);
 
     expect(
-      await screen.findByRole("button", { name: "Log Pee" }),
+      await screen.findByRole("button", { name: "Log bathroom" }),
     ).toBeDisabled();
-    expect(pee).toHaveTextContent("During walk · Logging…");
+    expect(bathroom).toHaveAttribute("aria-busy", "true");
     expect(screen.getByRole("button", { name: "End walk" })).toBeDisabled();
     expect(
       screen.getByRole("button", { name: "Log with details" }),
@@ -1845,7 +1957,7 @@ describe("DashboardPage walk potty attachment", () => {
     expect(convex.pottyLog).toHaveBeenCalledTimes(1);
 
     finish();
-    await waitFor(() => expect(pee).toBeEnabled());
+    await waitFor(() => expect(bathroom).toBeEnabled());
   });
 
   it("attaches a checked backdated potty to the active walk", async () => {
@@ -2134,7 +2246,7 @@ describe("DashboardPage active walk diary", () => {
     ).toBeDisabled();
     expect(getDiary()).toBeDisabled();
     expect(screen.getByRole("button", { name: "End walk" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Log Pee" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Log bathroom" })).toBeDisabled();
     expect(
       screen.getByRole("button", { name: "Log with details" }),
     ).toBeDisabled();
@@ -2142,8 +2254,9 @@ describe("DashboardPage active walk diary", () => {
     expect(convex.walkEnd).not.toHaveBeenCalled();
 
     finish();
-    expect(await screen.findByRole("status")).toHaveTextContent(
-      "Walk diary saved.",
+    expect(await screen.findByText("Walk diary saved.")).toHaveAttribute(
+      "role",
+      "status",
     );
   });
 
@@ -2219,7 +2332,7 @@ describe("DashboardPage active walk identity scoping", () => {
     convex.latest!.walk = walkA;
     convex.walkEnd.mockResolvedValue(Date.parse("2026-07-09T11:30:00Z"));
     const { rerender } = render(<DashboardPage dog={dog} />);
-    fireEvent.click(screen.getByRole("button", { name: "Choose end time" }));
+    openEarlierWalkEnd();
     fireEvent.change(screen.getByLabelText("Walk end time"), {
       target: { value: "2026-07-09T10:00" },
     });
@@ -2231,7 +2344,7 @@ describe("DashboardPage active walk identity scoping", () => {
     expect(
       screen.queryByRole("form", { name: "Backdated walk end" }),
     ).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Choose end time" }));
+    openEarlierWalkEnd();
     expect(screen.getByLabelText("Walk end time")).toHaveValue(
       "2026-07-09T12:00",
     );
@@ -2662,8 +2775,9 @@ describe("DashboardPage backdating", () => {
     expect(convex.log).toHaveBeenCalledTimes(1);
 
     finish();
-    expect(await screen.findByRole("status")).toHaveTextContent(
-      "Pee logged for Milo.",
+    expect(await screen.findByText("Pee logged for Milo.")).toHaveAttribute(
+      "role",
+      "status",
     );
     expect(
       screen.queryByRole("form", { name: "Backdated event" }),
@@ -3027,8 +3141,9 @@ describe("DashboardPage recent event actions", () => {
     expect(screen.getByRole("button", { name: /Edit Pee/ })).toBeDisabled();
     expect(screen.getByRole("button", { name: /Delete Pee/ })).toBeDisabled();
     finish();
-    expect(await screen.findByRole("status")).toHaveTextContent(
-      "Meal deleted.",
+    expect(await screen.findByText("Meal deleted.")).toHaveAttribute(
+      "role",
+      "status",
     );
     expect(
       screen.queryByText("Delete the “Meal” log?"),
@@ -3251,7 +3366,7 @@ describe("DashboardPage activity", () => {
 
     expect(screen.getByRole("button", { name: /Edit Play on/ })).toBeEnabled();
     expect(screen.getByText("Rolling treat ball")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Log Pee" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Log bathroom" })).toBeEnabled();
 
     convex.activityTypes = [];
     rerender(<DashboardPage dog={dog} />);
@@ -3286,13 +3401,9 @@ describe("DashboardPage activity", () => {
       "datetime",
       new Date(at).toISOString(),
     );
-    expect(screen.getByRole("button", { name: "Log Pee" })).toHaveTextContent(
-      "Last",
-    );
-    expect(screen.getByRole("button", { name: "Log Pee" })).toHaveAttribute(
-      "aria-describedby",
-      "quick-state-pee",
-    );
+    expect(
+      screen.getByRole("button", { name: "Log bathroom" }),
+    ).toHaveAttribute("aria-describedby", "quick-state-pee");
   });
 
   it("announces recent activity loading politely", () => {
@@ -3319,24 +3430,14 @@ describe("DashboardPage timers", () => {
     render(<DashboardPage dog={dog} />);
     act(() => vi.advanceTimersByTime(0));
 
-    const summary = screen.getByRole("region", { name: "Right now" });
+    const summary = getDailySummary();
     const sitCount = within(summary).getByLabelText("Sit: 2 today");
     const stayCount = within(summary).getByLabelText("Stay: 1 today");
-    expect(within(summary).getByText("Commands trained today")).toBeVisible();
-    expect(sitCount).toHaveTextContent("2×");
-    expect(stayCount).toHaveTextContent("1×");
-    expect(sitCount.closest("li")?.querySelector("[style]")).toHaveStyle({
-      transform: "scaleX(1)",
-    });
-    expect(stayCount.closest("li")?.querySelector("[style]")).toHaveStyle({
-      transform: "scaleX(0.5)",
-    });
-    expect(summary.querySelector("dl")?.parentElement).toContainElement(
-      within(summary).getByText("Commands trained today"),
-    );
+    expect(sitCount).toHaveTextContent("Sit ×2");
+    expect(stayCount).toHaveTextContent("Stay ×1");
     expect(
-      within(summary).getByRole("link", { name: "View training" }),
-    ).toHaveAttribute("href", "/training");
+      within(summary).getByRole("button", { name: "Log training" }),
+    ).toContainElement(sitCount);
     expect(convex.queryCalls).toContainEqual({
       name: "training:listDay",
       args: {
@@ -3359,23 +3460,17 @@ describe("DashboardPage timers", () => {
     render(<DashboardPage dog={dog} />);
     act(() => vi.advanceTimersByTime(0));
 
-    const summary = screen.getByRole("region", { name: "Right now" });
-    const tugCount = within(summary).getByLabelText("Tug: 2 today");
-    const snuffleCount = within(summary).getByLabelText("Snuffle mat: 1 today");
-    expect(
-      within(summary).getByText("Enrichment activities today"),
-    ).toBeVisible();
-    expect(tugCount).toHaveTextContent("2×");
-    expect(snuffleCount).toHaveTextContent("1×");
-    expect(tugCount.closest("li")?.querySelector("[style]")).toHaveStyle({
-      transform: "scaleX(1)",
+    const summary = getDailySummary();
+    const play = within(summary).getByRole("button", {
+      name: "Log enrichment",
     });
-    expect(snuffleCount.closest("li")?.querySelector("[style]")).toHaveStyle({
-      transform: "scaleX(0.5)",
-    });
+    const tugCount = within(play).getByLabelText("Tug: 2 today");
+    const snuffleCount = within(play).getByLabelText("Snuffle mat: 1 today");
+    expect(tugCount).toHaveTextContent("Tug ×2");
+    expect(snuffleCount).toHaveTextContent("Snuffle mat ×1");
     expect(
-      within(summary).getByRole("link", { name: "View enrichment" }),
-    ).toHaveAttribute("href", "/enrichment");
+      within(summary).queryByRole("link", { name: "View enrichment" }),
+    ).not.toBeInTheDocument();
     expect(convex.queryCalls).toContainEqual({
       name: "activityTypes:listDay",
       args: {
@@ -3384,6 +3479,71 @@ describe("DashboardPage timers", () => {
         endAt: Date.parse("2026-07-10T00:00:00Z"),
       },
     });
+  });
+
+  it("summarizes busy tiles and shows every popup option’s daily count", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(Date.parse("2026-07-09T12:00:00Z"));
+    convex.trainingCommands = [
+      { _id: "sit-id", name: "Sit" },
+      { _id: "stay-id", name: "Stay" },
+      { _id: "recall-id", name: "Recall" },
+      { _id: "heel-id", name: "Heel" },
+    ];
+    convex.trainingDay = [
+      { commandId: "sit-id", commandName: "Sit" },
+      { commandId: "stay-id", commandName: "Stay" },
+      { commandId: "recall-id", commandName: "Recall" },
+      { commandId: "sit-id", commandName: "Sit" },
+    ];
+    convex.activityTypes = [
+      activityType(),
+      activityType({ _id: "snuffle-id", name: "Snuffle mat" }),
+      activityType({ _id: "fetch-id", name: "Fetch" }),
+      activityType({ _id: "lick-id", name: "Lick mat" }),
+    ];
+    convex.enrichmentDay = [
+      { activityTypeId: tugId, activityName: "Tug" },
+      { activityTypeId: "snuffle-id", activityName: "Snuffle mat" },
+      { activityTypeId: "fetch-id", activityName: "Fetch" },
+      { activityTypeId: tugId, activityName: "Tug" },
+    ];
+
+    render(<DashboardPage dog={dog} />);
+    act(() => vi.advanceTimersByTime(0));
+
+    const summary = getDailySummary();
+    const training = within(summary).getByRole("button", {
+      name: "Log training",
+    });
+    const game = within(summary).getByRole("button", {
+      name: "Log enrichment",
+    });
+    expect(training).toHaveTextContent("3 commands · 4 sessions");
+    expect(game).toHaveTextContent("3 activities · 4 logs");
+
+    fireEvent.click(training);
+    const trainingDialog = screen.getByRole("dialog", {
+      name: "Log training",
+    });
+    expect(
+      within(trainingDialog).getByRole("checkbox", { name: "Sit" }),
+    ).toHaveAccessibleDescription("Today ×2");
+    expect(
+      within(trainingDialog).getByRole("checkbox", { name: "Heel" }),
+    ).toHaveAccessibleDescription("Today ×0");
+    fireEvent.click(
+      within(trainingDialog).getByRole("button", { name: "Cancel" }),
+    );
+
+    fireEvent.click(game);
+    const gameDialog = screen.getByRole("dialog", { name: "Log enrichment" });
+    expect(
+      within(gameDialog).getByRole("checkbox", { name: "Tug" }),
+    ).toHaveAccessibleDescription("Today ×2");
+    expect(
+      within(gameDialog).getByRole("checkbox", { name: "Lick mat" }),
+    ).toHaveAccessibleDescription("Today ×0");
   });
 
   it("derives event timers, the next meal, and current sleep state", () => {
@@ -3402,25 +3562,20 @@ describe("DashboardPage timers", () => {
 
     render(<DashboardPage dog={dog} />);
     act(() => vi.advanceTimersByTime(0));
-    const summary = screen.getByRole("region", { name: "Right now" });
+    const summary = getDailySummary();
 
-    expect(within(summary).getAllByRole("term")).toHaveLength(6);
+    expect(within(summary).getAllByRole("term")).toHaveLength(4);
     expect(within(summary).queryAllByRole("article")).toHaveLength(0);
     expect(
       within(getSummaryItem("Since last meal")).getByText("1h 30m"),
     ).toBeInTheDocument();
     expect(
-      within(getSummaryItem("Next meal")).getByText("1h 30m"),
-    ).toBeInTheDocument();
-    expect(
-      within(getSummaryItem("Next meal")).getByText("Dinner"),
-    ).toBeInTheDocument();
+      within(summary).getByRole("group", { name: "Meals" }),
+    ).toHaveTextContent("Dinner next · 1h 30m");
     expect(
       within(getSummaryItem("Since last pee")).getByText("20m"),
     ).toBeInTheDocument();
-    expect(
-      within(getSummaryItem("Since last poop")).getByText("No log yet"),
-    ).toBeInTheDocument();
+    expect(within(summary).getByText("Poop · No log yet")).toBeVisible();
     expect(
       within(getSummaryItem("Current rest state")).getByText("2h"),
     ).toBeInTheDocument();
@@ -3437,9 +3592,11 @@ describe("DashboardPage timers", () => {
     const { rerender } = render(<DashboardPage dog={dog} />);
     act(() => vi.advanceTimersByTime(0));
 
-    const summary = screen.getByRole("region", { name: "Right now" });
-    expect(within(summary).getByRole("status")).toHaveTextContent("Syncing…");
-    expect(within(summary).getAllByRole("term")).toHaveLength(6);
+    const summary = getDailySummary();
+    expect(within(summary).getByRole("status")).toHaveTextContent(
+      "Opening today’s activity…",
+    );
+    expect(within(summary).getAllByRole("term")).toHaveLength(4);
 
     convex.latest = {
       meal: null,
@@ -3455,15 +3612,13 @@ describe("DashboardPage timers", () => {
     expect(
       within(getSummaryItem("Since last meal")).getByText("No log yet"),
     ).toBeInTheDocument();
-    expect(
-      within(getSummaryItem("Next meal")).getByText("No meal scheduled"),
-    ).toBeInTheDocument();
+    expect(within(summary).getByText("No meal scheduled")).toBeVisible();
     expect(
       within(getSummaryItem("Current rest state")).getByText("No state yet"),
     ).toBeInTheDocument();
   });
 
-  it("formats the local day and event clocks in the dog's timezone", () => {
+  it("formats event clocks in the dog's timezone", () => {
     vi.useFakeTimers();
     const now = Date.parse("2026-07-09T02:00:00Z");
     const at = Date.parse("2026-07-09T01:30:00Z");
@@ -3483,12 +3638,6 @@ describe("DashboardPage timers", () => {
 
     render(<DashboardPage dog={{ ...dog, timezone }} />);
     act(() => vi.advanceTimersByTime(0));
-    const expectedDay = new Intl.DateTimeFormat(undefined, {
-      day: "numeric",
-      month: "long",
-      timeZone: timezone,
-      weekday: "long",
-    }).format(now);
     const expectedTime = new Intl.DateTimeFormat(undefined, {
       hour: "2-digit",
       minute: "2-digit",
@@ -3501,12 +3650,9 @@ describe("DashboardPage timers", () => {
       year: "numeric",
     }).format(at);
 
-    expect(screen.getByText(`${expectedDay} · today`)).toBeInTheDocument();
     expect(screen.getByText(expectedDate)).toBeInTheDocument();
     expect(screen.getByText(expectedTime)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Log Pee" })).toHaveTextContent(
-      `Last ${expectedTime}`,
-    );
+    expect(screen.getByRole("button", { name: "Log bathroom" })).toBeEnabled();
   });
 
   it("updates elapsed values on the shared 30-second tick", () => {
@@ -3558,6 +3704,22 @@ describe("DashboardPage agenda summary", () => {
     const { rerender } = render(<DashboardPage dog={dog} />);
     act(() => vi.advanceTimersByTime(0));
     const summary = screen.getByRole("region", { name: "Today’s agenda" });
+    const quickLog = getDailySummary();
+    const todayAtAGlance = screen.getByRole("region", { name: "Today so far" });
+
+    expect(
+      quickLog.compareDocumentPosition(summary) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      quickLog.compareDocumentPosition(todayAtAGlance) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      todayAtAGlance.compareDocumentPosition(summary) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(screen.queryByText(/^Hello, /)).not.toBeInTheDocument();
 
     expect(within(summary).getByRole("status")).toHaveTextContent(
       "Opening today’s agenda",
@@ -3565,7 +3727,7 @@ describe("DashboardPage agenda summary", () => {
     expect(
       within(getSummaryItem("Since last meal")).getByText("No log yet"),
     ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Log Pee" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Log bathroom" })).toBeEnabled();
 
     convex.agenda = null;
     rerender(<DashboardPage dog={dog} />);

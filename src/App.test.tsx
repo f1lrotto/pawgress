@@ -56,6 +56,7 @@ vi.mock("convex/react", () => ({
     if (name === "preferences:current") return auth.locale;
     if (
       name === "activityTypes:list" ||
+      name === "activityTypes:listDay" ||
       name === "bodyMetrics:listRecent" ||
       name === "events:listRecent" ||
       name === "insights:dayRatings" ||
@@ -239,7 +240,7 @@ describe("App auth routing", () => {
     renderAt();
 
     expect(
-      await screen.findByRole("heading", { name: "Hello, Milo." }),
+      await screen.findByRole("heading", { name: /^Today with / }),
     ).toBeInTheDocument();
     expect(document.documentElement.lang).toBe("en");
     expect(auth.persistLocale).not.toHaveBeenCalled();
@@ -279,7 +280,7 @@ describe("App auth routing", () => {
       "Opening your notebook",
     );
     expect(
-      screen.queryByRole("heading", { name: "Hello, Milo." }),
+      screen.queryByRole("heading", { name: /^Today with / }),
     ).not.toBeInTheDocument();
 
     auth.locale = "sk";
@@ -291,7 +292,7 @@ describe("App auth routing", () => {
     );
 
     expect(
-      await screen.findByRole("heading", { name: "Ahoj, Milo." }),
+      await screen.findByRole("heading", { name: /^Dnes s / }),
     ).toBeInTheDocument();
     expect(document.documentElement.lang).toBe("sk");
   });
@@ -315,12 +316,12 @@ describe("App auth routing", () => {
     );
     expect(auth.persistLocale).toHaveBeenCalledTimes(1);
     expect(
-      screen.queryByRole("heading", { name: "Hello, Milo." }),
+      screen.queryByRole("heading", { name: /^Today with / }),
     ).not.toBeInTheDocument();
 
     finish();
     expect(
-      await screen.findByRole("heading", { name: "Ahoj, Milo." }),
+      await screen.findByRole("heading", { name: /^Dnes s / }),
     ).toBeInTheDocument();
     expect(document.documentElement.lang).toBe("sk");
   });
@@ -336,12 +337,12 @@ describe("App auth routing", () => {
       "couldn't save your language preference",
     );
     expect(
-      screen.queryByRole("heading", { name: "Hello, Milo." }),
+      screen.queryByRole("heading", { name: /^Today with / }),
     ).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(
-      await screen.findByRole("heading", { name: "Hello, Milo." }),
+      await screen.findByRole("heading", { name: /^Today with / }),
     ).toBeInTheDocument();
     expect(auth.persistLocale).toHaveBeenCalledTimes(2);
   });
@@ -352,7 +353,7 @@ describe("App auth routing", () => {
     auth.locale = "en";
     auth.state.isAuthenticated = true;
     const view = renderAt();
-    await screen.findByRole("heading", { name: "Hello, Milo." });
+    await screen.findByRole("heading", { name: /^Today with / });
 
     auth.state.isAuthenticated = false;
     view.rerender(
@@ -399,10 +400,10 @@ describe("App auth routing", () => {
     renderAt();
 
     expect(
-      await screen.findByRole("heading", { name: "Hello, Milo." }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: "Log an activity" }),
+      await screen.findByRole("heading", {
+        level: 1,
+        name: /^Today with /,
+      }),
     ).toBeInTheDocument();
   });
 
@@ -412,7 +413,7 @@ describe("App auth routing", () => {
     const view = renderAt();
 
     expect(
-      await screen.findByRole("heading", { name: "Hello, Milo." }),
+      await screen.findByRole("heading", { name: /^Today with / }),
     ).toBeInTheDocument();
 
     auth.dogs = [alfie, dog];
@@ -424,7 +425,7 @@ describe("App auth routing", () => {
     );
 
     expect(
-      await screen.findByRole("heading", { name: "Hello, Milo." }),
+      await screen.findByRole("heading", { name: /^Today with / }),
     ).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Current dog" })).toHaveValue(
       dog._id,
@@ -437,14 +438,14 @@ describe("App auth routing", () => {
     const view = renderAt();
 
     expect(
-      await screen.findByRole("heading", { name: "Hello, Milo." }),
+      await screen.findByRole("heading", { name: /^Today with / }),
     ).toBeInTheDocument();
     fireEvent.change(screen.getByRole("combobox", { name: "Current dog" }), {
       target: { value: luna._id },
     });
 
     expect(
-      await screen.findByRole("heading", { name: "Hello, Luna." }),
+      await screen.findByRole("heading", { name: /^Today with / }),
     ).toBeInTheDocument();
     expect(
       auth.queryArgs.some(
@@ -465,7 +466,7 @@ describe("App auth routing", () => {
     );
 
     expect(
-      await screen.findByRole("heading", { name: "Hello, Luna." }),
+      await screen.findByRole("heading", { name: /^Today with / }),
     ).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Current dog" })).toHaveValue(
       luna._id,
@@ -480,7 +481,7 @@ describe("App auth routing", () => {
     );
 
     expect(
-      await screen.findByRole("heading", { name: "Hello, Milo." }),
+      await screen.findByRole("heading", { name: /^Today with / }),
     ).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Current dog" })).toHaveValue(
       dog._id,
@@ -495,7 +496,7 @@ describe("App auth routing", () => {
     );
 
     expect(
-      await screen.findByRole("heading", { name: "Hello, Milo." }),
+      await screen.findByRole("heading", { name: /^Today with / }),
     ).toBeInTheDocument();
   });
 
@@ -685,7 +686,7 @@ describe("App auth routing", () => {
     renderAt("/onboarding");
 
     expect(
-      await screen.findByRole("heading", { name: "Hello, Milo." }),
+      await screen.findByRole("heading", { name: /^Today with / }),
     ).toBeInTheDocument();
     expect(screen.getByTestId("location")).toHaveTextContent("/:REPLACE");
   });
@@ -705,7 +706,7 @@ describe("App auth routing", () => {
     renderAt("/not-a-page");
 
     expect(
-      await screen.findByRole("heading", { name: "Hello, Milo." }),
+      await screen.findByRole("heading", { name: /^Today with / }),
     ).toBeInTheDocument();
     expect(screen.getByTestId("location")).toHaveTextContent("/:REPLACE");
   });

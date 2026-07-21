@@ -3,6 +3,7 @@ import type { FunctionReturnType } from "convex/server";
 import type { TFunction } from "i18next";
 import {
   type FormEvent,
+  type ReactNode,
   useEffect,
   useMemo,
   useReducer,
@@ -51,6 +52,26 @@ type TrainingCommands = FunctionReturnType<typeof api.training.list>;
 type TodayActivities =
   | Array<{ count: number; displayCount: string; id: string; name: string }>
   | undefined;
+type DailySummary = {
+  activityCount: string | undefined;
+  enrichment: TodayActivities;
+  isLoading: boolean;
+  meal: { elapsed: string; nextLabel?: string; nextValue: string };
+  pee: string;
+  poop: string;
+  rest: { elapsed: string; startedAt?: string; state?: "asleep" | "awake" };
+  restToday?: string;
+  training: TodayActivities;
+  treat: string;
+  updatedAt: string | undefined;
+  walk: {
+    count?: string;
+    duration?: string;
+    elapsed: string;
+    hasLatest: boolean;
+  };
+  water?: { count: string | undefined; elapsed: string; next: string };
+};
 const countCompleted = (goals: ReadonlyArray<{ done: boolean }>) =>
   goals.filter(({ done }) => done).length;
 type ActivityTypesById = ReadonlyMap<
@@ -107,6 +128,44 @@ type RecentState = {
   pendingDeleteId: Id<"events"> | null;
   status: string;
 };
+
+const rowActionClassName =
+  "rounded-lg text-xl font-normal leading-none text-primary [&_svg]:size-5";
+
+const rowActionGlyphPaths = {
+  play: <path d="m7 4 13 8-13 8Z" />,
+  rest: (
+    <>
+      <circle cx="6" cy="7" r="2.5" />
+      <path d="M6 1.5V3M1.5 7H3M9 7h1.5M18.8 9.5a5.5 5.5 0 1 0 2.7 8.8 4.5 4.5 0 0 1-2.7-8.8Z" />
+    </>
+  ),
+  sleep: <path d="M20.5 14.2A8 8 0 0 1 9.8 3.5a8.5 8.5 0 1 0 10.7 10.7Z" />,
+  stop: <rect x="5" y="5" width="14" height="14" rx="1.5" />,
+  wake: (
+    <>
+      <path d="M4 18h16M6 14a6 6 0 0 1 12 0M12 2v3M4.9 5.9 7 8M19.1 5.9 17 8" />
+    </>
+  ),
+} as const;
+
+function RowActionGlyph({ kind }: { kind: keyof typeof rowActionGlyphPaths }) {
+  return (
+    <svg
+      aria-hidden="true"
+      data-action-glyph={kind}
+      fill="none"
+      focusable="false"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="2"
+      viewBox="0 0 24 24"
+    >
+      {rowActionGlyphPaths[kind]}
+    </svg>
+  );
+}
 
 const initialBackdateState: BackdateState = {
   amount: "",
@@ -255,210 +314,113 @@ const hasErrorCode = (error: unknown, code: string) =>
     "data" in error &&
     error.data === code);
 
-function TodayActivitySummary({
-  countLabel,
-  emptyText,
-  items,
-  linkText,
-  loadingText,
+function DailyRow({
+  actions,
+  className = "",
+  context,
+  detail,
+  footer,
+  icon,
+  metric,
+  metricLabel,
+  statusId,
   title,
-  to,
 }: {
-  countLabel: (name: string, count: number) => string;
-  emptyText: string;
-  items: TodayActivities;
-  linkText: string;
-  loadingText: string;
+  actions: ReactNode;
+  className?: string;
+  context: string;
+  detail: ReactNode;
+  footer?: ReactNode;
+  icon: string;
+  metric: string;
+  metricLabel: string;
+  statusId?: string;
   title: string;
-  to: string;
 }) {
-  const maxCount = Math.max(1, ...(items?.map(({ count }) => count) ?? []));
   return (
-    <div className="border-t border-border bg-secondary/60 px-4 py-4">
-      <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
-        <h3 className="text-balance text-sm font-semibold">{title}</h3>
-        <Link
-          to={to}
-          className="-my-2 inline-flex min-h-11 items-center text-sm font-semibold text-primary underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-        >
-          {linkText}
-        </Link>
-      </div>
-      {items === undefined ? (
-        <div className="mt-3">
-          <span role="status" className="sr-only">
-            {loadingText}
-          </span>
-          <span
-            aria-hidden="true"
-            className="block h-5 w-48 animate-pulse rounded bg-muted motion-reduce:animate-none"
-          />
+    <div
+      role="group"
+      aria-label={title}
+      className={`grid min-h-24 grid-cols-[2.125rem_minmax(0,1fr)_auto] items-center gap-3 border-b border-border bg-card px-4 py-4 sm:gap-4 sm:px-5 ${className}`}
+    >
+      <span
+        aria-hidden="true"
+        className="grid size-[2.125rem] place-items-center rounded-lg bg-muted text-base"
+      >
+        {icon}
+      </span>
+      <div id={statusId} className="min-w-0">
+        <h2 className="text-sm font-bold leading-5 text-muted-foreground">
+          {title}
+        </h2>
+        <dl>
+          <div className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+            <dt className="sr-only">{metricLabel}</dt>
+            <dd className="text-lg font-semibold leading-6 tracking-[-0.01em] tabular-nums sm:text-xl">
+              {metric}
+            </dd>
+            {context && (
+              <dd className="text-sm font-medium leading-5">{context}</dd>
+            )}
+          </div>
+        </dl>
+        <div className="mt-0.5 text-sm leading-5 text-muted-foreground">
+          {detail}
         </div>
-      ) : items.length === 0 ? (
-        <p className="mt-1 text-sm text-muted-foreground">{emptyText}</p>
-      ) : (
-        <ul className="mt-3 grid grid-cols-[repeat(auto-fit,minmax(min(8rem,100%),1fr))] gap-x-6 gap-y-4">
-          {items.map(({ count, displayCount, id, name }) => (
-            <li key={id} className="min-w-0">
-              <div className="flex items-baseline justify-between gap-3">
-                <span className="min-w-0 break-words text-sm font-medium [overflow-wrap:anywhere]">
-                  {name}
-                </span>
-                <span
-                  aria-label={countLabel(name, count)}
-                  className="shrink-0 text-lg font-bold tabular-nums text-primary"
-                >
-                  {displayCount}×
-                </span>
-              </div>
-              <div
-                aria-hidden="true"
-                className="relative mt-2 h-1.5 overflow-hidden rounded-full bg-muted"
-              >
-                <span
-                  className="absolute inset-0 origin-left rounded-full bg-primary transition-transform duration-200 ease-out motion-reduce:transition-none"
-                  style={{ transform: `scaleX(${count / maxCount})` }}
-                />
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
+      </div>
+      <div className="flex flex-col items-stretch justify-center gap-2 sm:flex-row sm:items-center">
+        {actions}
+      </div>
+      {footer && <div className="col-span-full">{footer}</div>}
     </div>
   );
 }
 
-function RightNowSummary({
-  enrichment,
-  isLoading,
+function ActivityCountSummary({
   items,
-  training,
+  kind,
 }: {
-  enrichment: TodayActivities;
-  isLoading: boolean;
-  items: Array<{ detail?: string; label: string; value: string }>;
-  training: TodayActivities;
+  items: TodayActivities;
+  kind: "enrichment" | "training";
 }) {
-  const { t } = useTranslation("dashboard");
+  const { i18n, t } = useTranslation("dashboard");
+  if (items === undefined) return <>{t("common.checking")}</>;
+  if (items.length === 0) return <>{t("daily.more.none")}</>;
+  if (items.length > 2) {
+    const locale = resolveBrowserLocale(i18n.languages);
+    const total = items.reduce((sum, item) => sum + item.count, 0);
+    const groups = t(
+      kind === "enrichment"
+        ? "daily.more.gameActivities"
+        : "daily.more.commands",
+      {
+        count: items.length,
+        formattedCount: formatNumber(items.length, locale),
+      },
+    );
+    const entries = t(
+      kind === "enrichment" ? "daily.more.logs" : "daily.more.sessions",
+      { count: total, formattedCount: formatNumber(total, locale) },
+    );
+    return <>{t("daily.more.aggregate", { entries, groups })}</>;
+  }
   return (
-    <section aria-labelledby="timers-title" className="pb-6">
-      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
-        <h2 id="timers-title" className="text-xl font-bold leading-[1.625rem]">
-          {t("timers.title")}
-        </h2>
-        <span className="text-xs font-medium text-muted-foreground">
-          {t("timers.updates")}
+    <>
+      {items.map(({ count, displayCount, id, name }, index) => (
+        <span
+          key={id}
+          aria-label={t(
+            kind === "enrichment"
+              ? "timers.enrichmentCount"
+              : "timers.trainingCount",
+            { count, name },
+          )}
+        >
+          {index > 0 && " · "}
+          {name} ×{displayCount}
         </span>
-      </div>
-      {isLoading && (
-        <span role="status" className="sr-only">
-          {t("timers.syncing")}
-        </span>
-      )}
-      <div className="overflow-hidden rounded-xl border border-border bg-card">
-        <dl className="grid grid-cols-2 gap-px bg-border sm:grid-cols-3 lg:grid-cols-6">
-          {items.map(({ detail, label, value }) => (
-            <div key={label} className="min-w-0 bg-card px-4 py-4">
-              <dt className="text-sm font-medium leading-5 text-muted-foreground">
-                {label}
-              </dt>
-              <dd className="mt-2">
-                {isLoading ? (
-                  <span
-                    aria-hidden="true"
-                    className="block h-6 w-16 animate-pulse rounded bg-muted motion-reduce:animate-none"
-                  />
-                ) : (
-                  <span className="block text-xl font-bold leading-6">
-                    {value}
-                  </span>
-                )}
-                {!isLoading && detail && (
-                  <span className="mt-1 block truncate text-xs font-medium text-muted-foreground">
-                    {detail}
-                  </span>
-                )}
-              </dd>
-            </div>
-          ))}
-        </dl>
-        <TodayActivitySummary
-          countLabel={(name, count) =>
-            t("timers.trainingCount", { count, name })
-          }
-          emptyText={t("timers.noTraining")}
-          items={training}
-          linkText={t("timers.viewTraining")}
-          loadingText={t("timers.trainingLoading")}
-          title={t("timers.trainingToday")}
-          to="/training"
-        />
-        <TodayActivitySummary
-          countLabel={(name, count) =>
-            t("timers.enrichmentCount", { count, name })
-          }
-          emptyText={t("timers.noEnrichment")}
-          items={enrichment}
-          linkText={t("timers.viewEnrichment")}
-          loadingText={t("timers.enrichmentLoading")}
-          title={t("timers.enrichmentToday")}
-          to="/enrichment"
-        />
-      </div>
-    </section>
-  );
-}
-
-function WaterTodaySummary({
-  count,
-  nextDrink,
-}: {
-  count: string | undefined;
-  nextDrink: string | undefined;
-}) {
-  const { t } = useTranslation("dashboard");
-  const isLoading = count === undefined || nextDrink === undefined;
-  return (
-    <section aria-labelledby="water-today-title" className="pb-6">
-      <div className="overflow-hidden rounded-xl border border-border bg-card">
-        <div className="flex items-center gap-3 border-b border-border bg-secondary/60 px-5 py-4">
-          <span aria-hidden="true" className="text-xl">
-            🚰
-          </span>
-          <h2
-            id="water-today-title"
-            className="text-xl font-bold leading-[1.625rem]"
-          >
-            {t("waterToday.title")}
-          </h2>
-        </div>
-        {isLoading && (
-          <span role="status" className="sr-only">
-            {t("waterToday.loading")}
-          </span>
-        )}
-        <dl className="grid grid-cols-2 gap-px bg-border">
-          {[
-            { label: t("waterToday.drinks"), value: count && `${count}×` },
-            { label: t("timers.nextWater"), value: nextDrink },
-          ].map(({ label, value }) => (
-            <div key={label} className="min-w-0 bg-card px-5 py-5">
-              <dt className="text-sm font-medium text-muted-foreground">
-                {label}
-              </dt>
-              <dd className="mt-2 text-2xl font-bold tabular-nums">
-                {value ?? (
-                  <span
-                    aria-hidden="true"
-                    className="block h-7 w-20 animate-pulse rounded bg-muted motion-reduce:animate-none"
-                  />
-                )}
-              </dd>
-            </div>
-          ))}
-        </dl>
-      </div>
-    </section>
+      ))}
+    </>
   );
 }
 
@@ -485,6 +447,29 @@ const countActivities = <Item,>(
         right.count - left.count || left.name.localeCompare(right.name, locale),
     );
 
+const getRestTodayMs = (
+  items: DayOverviewItem[],
+  startAt: number,
+  endAt: number,
+  now: number,
+) => {
+  const limit = Math.min(now, endAt);
+  let asleepAt: number | null = null;
+  let total = 0;
+  for (const item of items
+    .filter(({ kind }) => kind === "sleep" || kind === "wake")
+    .sort((left, right) => left.at - right.at)) {
+    if (item.kind === "sleep") asleepAt = Math.max(item.at, startAt);
+    else if (asleepAt !== null && item.at > asleepAt) {
+      total += Math.min(item.at, limit) - asleepAt;
+      asleepAt = null;
+    }
+  }
+  return asleepAt === null || asleepAt >= limit
+    ? total
+    : total + limit - asleepAt;
+};
+
 function AgendaSummary({ agenda }: { agenda: AgendaDay | undefined }) {
   const { t } = useTranslation(["dashboard", "agenda"]);
   const enrichment = agenda?.enrichmentGoals ?? [];
@@ -498,7 +483,7 @@ function AgendaSummary({ agenda }: { agenda: AgendaDay | undefined }) {
   return (
     <section
       aria-labelledby="agenda-summary-title"
-      className="mb-6 rounded-xl bg-muted/70 px-5 py-5 sm:px-6"
+      className="rounded-xl bg-muted/70 px-5 py-5 sm:px-6"
     >
       <div className="flex flex-col gap-5 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 flex-1">
@@ -790,7 +775,9 @@ function WalkDiaryEditor({
 
 function WalkControls({
   activeWalk,
+  className,
   dog,
+  isEarlier,
   now,
   onError,
   onOperationEnd,
@@ -798,10 +785,13 @@ function WalkControls({
   onDiarySaved,
   onTransition,
   pendingOperation,
+  summary,
   timeFormatter,
 }: {
   activeWalk: ActiveWalk | undefined;
+  className: string;
   dog: DashboardDog;
+  isEarlier: boolean;
   now: number | null;
   onError: (message: string) => void;
   onOperationEnd: () => void;
@@ -811,6 +801,7 @@ function WalkControls({
   onDiarySaved: () => void;
   onTransition: (message: string) => void;
   pendingOperation: PendingOperation;
+  summary: DailySummary["walk"];
   timeFormatter: Intl.DateTimeFormat;
 }) {
   const { i18n, t } = useTranslation("dashboard");
@@ -825,7 +816,20 @@ function WalkControls({
     mergeWalkTimeState,
     initialWalkTimeState,
   );
+  useEffect(() => {
+    if (isEarlier) return;
+    if (startForm.isOpen) updateStartForm(initialWalkTimeState);
+    if (endForm.isOpen) updateEndForm(initialWalkTimeState);
+  }, [endForm.isOpen, isEarlier, startForm.isOpen]);
   const isBusy = pendingOperation !== null;
+  const detail = summary.duration
+    ? t("daily.walk.last", {
+        formattedCount: summary.count ?? formatNumber(0, locale),
+        duration: summary.duration,
+      })
+    : summary.count
+      ? t("daily.walk.count", { formattedCount: summary.count })
+      : t("daily.walk.none");
 
   const start = async (at: number, isBackdated = false) => {
     if (!onOperationStart("walk-start")) return;
@@ -950,145 +954,161 @@ function WalkControls({
 
   if (activeWalk === undefined) {
     return (
-      <Button
-        type="button"
-        disabled
-        variant="secondary"
-        size="lg"
-        className="mt-4 w-full justify-start"
-      >
-        {t("walk.checking")}
-      </Button>
+      <DailyRow
+        actions={
+          <Button
+            type="button"
+            disabled
+            variant="secondary"
+            size="icon"
+            aria-label={t("walk.checking")}
+            className={rowActionClassName}
+          >
+            <RowActionGlyph kind="play" />
+          </Button>
+        }
+        className={className}
+        context=""
+        detail={t("daily.walk.loading")}
+        icon="🐕"
+        metric={summary.elapsed}
+        metricLabel={t("timers.sinceWalk")}
+        title={t("daily.walk.title")}
+      />
     );
   }
 
   if (activeWalk === null) {
     return (
-      <div className="mt-4 rounded-xl bg-muted/70 p-3">
-        <Button
-          type="button"
-          disabled={isBusy}
-          size="lg"
-          className="w-full justify-start"
-          onClick={() => void start(Date.now())}
-        >
-          {pendingOperation === "walk-start" && !startForm.isOpen
-            ? t("walk.starting")
-            : t("walk.start")}
-        </Button>
-        {startForm.isOpen ? (
-          <WalkTimeForm
-            at={startForm.at}
-            disabled={isBusy}
-            error={startForm.error}
-            formLabel={t("walk.startBackdatedAria")}
-            id="walk-start-at"
-            inputLabel={t("walk.startTime")}
-            isPending={pendingOperation === "walk-start"}
-            onCancel={() => updateStartForm(initialWalkTimeState)}
-            onChange={(at) => updateStartForm({ at, error: "" })}
-            onSubmit={submitStart}
-            pendingLabel={t("walk.starting")}
-            submitLabel={t("walk.startAtTime")}
-            timezone={dog.timezone}
-          />
-        ) : (
+      <DailyRow
+        actions={
           <Button
             type="button"
-            disabled={isBusy}
-            variant="quiet"
-            className="mt-2 w-full"
-            onClick={() => openForm(updateStartForm, Date.now())}
+            disabled={isBusy || (isEarlier && startForm.isOpen)}
+            variant="secondary"
+            size="icon"
+            aria-label={
+              pendingOperation === "walk-start" && !startForm.isOpen
+                ? t("walk.starting")
+                : t("walk.start")
+            }
+            aria-busy={pendingOperation === "walk-start"}
+            className={rowActionClassName}
+            onClick={() =>
+              isEarlier
+                ? openForm(updateStartForm, Date.now())
+                : void start(Date.now())
+            }
           >
-            {t("walk.startOtherTime")}
+            <RowActionGlyph kind="play" />
           </Button>
-        )}
-      </div>
+        }
+        className={className}
+        context={summary.hasLatest ? t("daily.walk.since") : ""}
+        detail={detail}
+        footer={
+          startForm.isOpen ? (
+            <WalkTimeForm
+              at={startForm.at}
+              disabled={isBusy}
+              error={startForm.error}
+              formLabel={t("walk.startBackdatedAria")}
+              id="walk-start-at"
+              inputLabel={t("walk.startTime")}
+              isPending={pendingOperation === "walk-start"}
+              onCancel={() => updateStartForm(initialWalkTimeState)}
+              onChange={(at) => updateStartForm({ at, error: "" })}
+              onSubmit={submitStart}
+              pendingLabel={t("walk.starting")}
+              submitLabel={t("walk.startAtTime")}
+              timezone={dog.timezone}
+            />
+          ) : undefined
+        }
+        icon="🐕"
+        metric={summary.elapsed}
+        metricLabel={t("timers.sinceWalk")}
+        title={t("daily.walk.title")}
+      />
     );
   }
 
   return (
-    <section
-      aria-labelledby="active-walk-title"
-      className="mt-4 rounded-xl bg-secondary/70 p-4 sm:p-5"
-    >
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span
-              className="size-2.5 shrink-0 rounded-full bg-success"
-              aria-hidden="true"
-            />
-            <h3 id="active-walk-title" className="text-xl font-bold leading-6">
-              {t("walk.inProgress")}
-            </h3>
-          </div>
-          <p className="mt-2 text-sm text-muted-foreground">
-            <Trans
-              t={t}
-              i18nKey="walk.startedAt"
-              values={{ time: timeFormatter.format(activeWalk.at) }}
-              components={{
-                time: <time dateTime={new Date(activeWalk.at).toISOString()} />,
-              }}
-            />
-          </p>
-        </div>
-        <strong className="shrink-0 text-xl font-bold tabular-nums leading-6">
-          {now === null
-            ? t("common.syncing")
-            : formatElapsed(getElapsedMs(activeWalk.at, now), locale)}
-        </strong>
-      </div>
-      <WalkDiaryEditor
-        disabled={isBusy}
-        dogId={dog._id}
-        onError={onError}
-        onOperationEnd={onOperationEnd}
-        onOperationStart={onOperationStart}
-        onSaved={onDiarySaved}
-        pendingOperation={pendingOperation}
-        walk={activeWalk}
-      />
-      <Button
-        type="button"
-        disabled={isBusy}
-        size="lg"
-        className="mt-4 w-full"
-        onClick={() => void end(activeWalk, Date.now())}
-      >
-        {pendingOperation === "walk-end" && !endForm.isOpen
-          ? t("walk.ending")
-          : t("walk.end")}
-      </Button>
-      {endForm.isOpen ? (
-        <WalkTimeForm
-          at={endForm.at}
-          disabled={isBusy}
-          error={endForm.error}
-          formLabel={t("walk.endBackdatedAria")}
-          id="walk-end-at"
-          inputLabel={t("walk.endTime")}
-          isPending={pendingOperation === "walk-end"}
-          onCancel={() => updateEndForm(initialWalkTimeState)}
-          onChange={(at) => updateEndForm({ at, error: "" })}
-          onSubmit={submitEnd}
-          pendingLabel={t("walk.ending")}
-          submitLabel={t("walk.endAtTime")}
-          timezone={dog.timezone}
-        />
-      ) : (
+    <DailyRow
+      actions={
         <Button
           type="button"
-          disabled={isBusy}
-          variant="quiet"
-          className="mt-2 w-full"
-          onClick={() => openForm(updateEndForm, Date.now())}
+          disabled={isBusy || (isEarlier && endForm.isOpen)}
+          variant="secondary"
+          size="icon"
+          aria-label={
+            pendingOperation === "walk-end" && !endForm.isOpen
+              ? t("walk.ending")
+              : t("walk.end")
+          }
+          aria-busy={pendingOperation === "walk-end"}
+          className={rowActionClassName}
+          onClick={() =>
+            isEarlier
+              ? openForm(updateEndForm, Date.now())
+              : void end(activeWalk, Date.now())
+          }
         >
-          {t("walk.chooseEndTime")}
+          <RowActionGlyph kind="stop" />
         </Button>
-      )}
-    </section>
+      }
+      className={className}
+      context={t("daily.walk.inProgress")}
+      detail={
+        <Trans
+          t={t}
+          i18nKey="walk.startedAt"
+          values={{ time: timeFormatter.format(activeWalk.at) }}
+          components={{
+            time: <time dateTime={new Date(activeWalk.at).toISOString()} />,
+          }}
+        />
+      }
+      footer={
+        <div className="rounded-lg bg-secondary/60 p-3 sm:p-4">
+          <WalkDiaryEditor
+            disabled={isBusy}
+            dogId={dog._id}
+            onError={onError}
+            onOperationEnd={onOperationEnd}
+            onOperationStart={onOperationStart}
+            onSaved={onDiarySaved}
+            pendingOperation={pendingOperation}
+            walk={activeWalk}
+          />
+          {isEarlier && endForm.isOpen && (
+            <WalkTimeForm
+              at={endForm.at}
+              disabled={isBusy}
+              error={endForm.error}
+              formLabel={t("walk.endBackdatedAria")}
+              id="walk-end-at"
+              inputLabel={t("walk.endTime")}
+              isPending={pendingOperation === "walk-end"}
+              onCancel={() => updateEndForm(initialWalkTimeState)}
+              onChange={(at) => updateEndForm({ at, error: "" })}
+              onSubmit={submitEnd}
+              pendingLabel={t("walk.ending")}
+              submitLabel={t("walk.endAtTime")}
+              timezone={dog.timezone}
+            />
+          )}
+        </div>
+      }
+      icon="🐕"
+      metric={
+        now === null
+          ? t("common.syncing")
+          : formatElapsed(getElapsedMs(activeWalk.at, now), locale)
+      }
+      metricLabel={t("timers.currentWalk")}
+      title={t("daily.walk.title")}
+    />
   );
 }
 
@@ -1896,6 +1916,7 @@ function QuickLogSection({
   now,
   pendingOperation,
   sleepState,
+  summary,
   timeFormatter,
   activityTypes,
   trainingCommands,
@@ -1932,13 +1953,18 @@ function QuickLogSection({
   now: number | null;
   pendingOperation: PendingOperation;
   sleepState: SleepState | undefined;
+  summary: DailySummary;
   timeFormatter: Intl.DateTimeFormat;
   activityTypes: ActivityTypes | undefined;
   trainingCommands: TrainingCommands | undefined;
 }) {
   const { t } = useTranslation("dashboard");
+  const bathroomOpenerRef = useRef<HTMLButtonElement>(null);
+  const bathroomTrayRef = useRef<HTMLDivElement>(null);
   const earlierDialogRef = useRef<HTMLDialogElement>(null);
+  const restDialogRef = useRef<HTMLDialogElement>(null);
   const walkPromptDialogRef = useRef<HTMLDialogElement>(null);
+  const [isBathroomTrayOpen, setIsBathroomTrayOpen] = useState(false);
   const [isEarlier, setIsEarlier] = useState(false);
   const [earlierAction, setEarlierAction] = useState<EarlierAction | null>(
     null,
@@ -1948,8 +1974,6 @@ function QuickLogSection({
   const walkPromptAction = walkPrompt?.action ?? null;
   const isBusy = pendingOperation !== null;
   const activeWalkKey = activeWalk?._id ?? "no-active-walk";
-  const availableQuickActions =
-    dog.waterIntervalMinutes === undefined ? defaultQuickActions : quickActions;
   const log = (action: EarlierAction) => {
     if (!isEarlier) {
       const at = getCurrentTime();
@@ -1969,6 +1993,40 @@ function QuickLogSection({
     setEarlierAction(action);
     setEarlierAt(null);
     earlierDialogRef.current?.showModal();
+  };
+  const logBathroom = (action: EarlierAction) => {
+    bathroomTrayRef.current?.hidePopover?.();
+    setIsBathroomTrayOpen(false);
+    bathroomOpenerRef.current?.focus();
+    log(action);
+  };
+  useEffect(() => {
+    const opener = bathroomOpenerRef.current;
+    const tray = bathroomTrayRef.current;
+    if (opener === null || tray === null) return;
+    if (!isBathroomTrayOpen) {
+      tray.hidePopover?.();
+      return;
+    }
+    const openerRect = opener.getBoundingClientRect();
+    tray.showPopover?.();
+    const trayRect = tray.getBoundingClientRect();
+    const left = Math.min(
+      window.innerWidth - trayRect.width - 16,
+      Math.max(16, openerRect.right - trayRect.width),
+    );
+    const below = openerRect.bottom + 8;
+    const top =
+      below + trayRect.height <= window.innerHeight - 16
+        ? below
+        : Math.max(16, openerRect.top - trayRect.height - 8);
+    tray.style.setProperty("--bathroom-tray-left", `${left}px`);
+    tray.style.setProperty("--bathroom-tray-top", `${top}px`);
+    tray.querySelector<HTMLButtonElement>("button")?.focus();
+  }, [isBathroomTrayOpen]);
+  const logRest = (kind: "sleep" | "wake") => {
+    restDialogRef.current?.close();
+    log({ kind, label: t(`events.${kind}`) });
   };
   const closeEarlierDialog = () => earlierDialogRef.current?.close();
   const resetEarlierDialog = () => {
@@ -2023,178 +2081,417 @@ function QuickLogSection({
     );
     closeEarlierDialog();
   };
+  const restKind = sleepState?.state === "asleep" ? "wake" : "sleep";
+  const restGlyph =
+    sleepState?.state === "asleep"
+      ? "wake"
+      : sleepState?.state === "awake"
+        ? "sleep"
+        : "rest";
+  const restDetail = (
+    <>
+      {summary.rest.startedAt && summary.rest.state
+        ? t(`daily.rest.${summary.rest.state}At`, {
+            time: summary.rest.startedAt,
+          })
+        : t("daily.rest.none")}
+      {summary.restToday && (
+        <>
+          <span aria-hidden="true"> · </span>
+          {t("daily.rest.today", { duration: summary.restToday })}
+        </>
+      )}
+    </>
+  );
   return (
-    <section aria-labelledby="quick-log-title" className="min-w-0">
-      <h2
-        id="quick-log-title"
-        className="text-balance text-xl font-bold leading-[1.625rem]"
-      >
-        {t("quick.title")}
-      </h2>
-
-      <fieldset
-        disabled={pendingOperation !== null}
-        className="mt-3 border-b border-border pb-4"
-      >
-        <legend className="text-sm font-bold">{t("quick.when")}</legend>
-        <div className="mt-2 grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-input bg-input sm:max-w-md">
-          <Button
-            type="button"
-            variant={!isEarlier ? "primary" : "secondary"}
-            aria-pressed={!isEarlier}
-            className="rounded-none border-0 px-3 text-sm"
-            onClick={() => setIsEarlier(false)}
+    <section aria-labelledby="quick-log-title" className="min-w-0 py-6 sm:py-8">
+      <div className="mb-4 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
+          <h1
+            id="quick-log-title"
+            className="text-balance text-[1.75rem] font-bold leading-[2.125rem]"
           >
-            {t("quick.now")}
-          </Button>
-          <Button
-            type="button"
-            variant={isEarlier ? "primary" : "secondary"}
-            aria-pressed={isEarlier}
-            className="rounded-none border-0 px-3 text-sm"
-            onClick={() => setIsEarlier(true)}
+            {t("daily.title", { dogName: dog.name })}
+          </h1>
+          <p
+            role={summary.isLoading ? "status" : undefined}
+            className="mt-1 text-sm font-medium text-muted-foreground"
           >
-            {t("quick.earlier")}
-          </Button>
+            {summary.isLoading
+              ? t("daily.loading")
+              : t("daily.meta", {
+                  formattedCount: summary.activityCount ?? "0",
+                  time: summary.updatedAt ?? "",
+                })}
+          </p>
         </div>
-        <p className="mt-2 text-sm text-muted-foreground">
-          {isEarlier ? t("quick.earlierHelp") : t("quick.currentTime")}
-        </p>
-      </fieldset>
+        <fieldset disabled={pendingOperation !== null}>
+          <legend className="sr-only">{t("quick.when")}</legend>
+          <div className="grid grid-cols-2 gap-px overflow-hidden rounded-lg border border-input bg-input sm:min-w-56">
+            <Button
+              type="button"
+              variant={!isEarlier ? "primary" : "secondary"}
+              aria-pressed={!isEarlier}
+              className="rounded-none border-0 px-3 text-sm"
+              onClick={() => setIsEarlier(false)}
+            >
+              {t("quick.now")}
+            </Button>
+            <Button
+              type="button"
+              variant={isEarlier ? "primary" : "secondary"}
+              aria-pressed={isEarlier}
+              className="rounded-none border-0 px-3 text-sm"
+              onClick={() => setIsEarlier(true)}
+            >
+              {t("quick.earlier")}
+            </Button>
+          </div>
+        </fieldset>
+      </div>
 
       <div
         role="group"
-        aria-labelledby="quick-log-title"
-        className={`mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-border bg-border sm:grid-cols-4 ${dog.waterIntervalMinutes === undefined ? "lg:grid-cols-8" : "lg:grid-cols-9"}`}
+        aria-label={t("daily.actionsAria")}
+        className="grid overflow-hidden rounded-xl border border-border bg-card lg:grid-cols-2"
       >
-        {availableQuickActions.map(({ icon, kind }) => {
-          const label = t(`events.${kind}`);
-          const latestEvent = latest?.[kind];
-          const isPottyAction = isPottyKind(kind);
-          const isRestAction = kind === "wake" || kind === "sleep";
-          const isCurrentRestState =
-            (kind === "wake" && sleepState?.state === "awake") ||
-            (kind === "sleep" && sleepState?.state === "asleep");
-          const state =
-            pendingOperation === kind
-              ? t("backdate.logging")
-              : isPottyAction && activeWalk === undefined
-                ? t("quick.checkingWalk")
-                : isRestAction && latest === undefined
-                  ? t("quick.checkingRest")
-                  : latest === undefined
-                    ? t("common.checking")
-                    : latestEvent
-                      ? t("quick.lastAt", {
-                          time: timeFormatter.format(latestEvent.at),
-                        })
-                      : t("quick.noLogs");
-          if (kind === "pee") {
-            return (
-              <div key={kind} className="min-h-24 bg-card px-3 py-3 sm:px-4">
-                <span className="flex items-center gap-2.5">
-                  <span
-                    className="w-5 shrink-0 text-center text-base leading-none"
-                    aria-hidden="true"
-                  >
-                    {icon}
-                  </span>
-                  <strong className="text-sm leading-5 sm:text-base">
-                    {label}
-                  </strong>
-                </span>
-                <div className="mt-2 grid grid-cols-2 gap-px overflow-hidden rounded-md bg-border">
-                  {(["inside", "outside"] as const).map((place) => (
-                    <button
-                      key={place}
-                      type="button"
-                      disabled={
-                        isBusy ||
-                        (place === "outside" && activeWalk === undefined)
-                      }
-                      aria-label={
-                        place === "outside"
-                          ? t("quick.logAria", { event: label })
-                          : t("quick.logPeeAria", {
-                              place: t(`peePlace.${place}`),
-                            })
-                      }
-                      aria-busy={pendingOperation === "pee"}
-                      aria-describedby="quick-state-pee"
-                      className="min-h-11 bg-muted px-2 text-xs font-semibold transition-colors hover:bg-accent focus-visible:z-10 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-60"
-                      onClick={() => log({ kind, label, peePlace: place })}
-                    >
-                      {t(`peePlace.${place}`)}
-                      <span className="sr-only">
-                        {activeWalk !== null && activeWalk !== undefined
-                          ? t("quick.duringWalk", { state })
-                          : state}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-                <span
-                  id="quick-state-pee"
-                  className="mt-1 block truncate text-xs leading-4 text-muted-foreground"
-                >
-                  {state}
-                </span>
-              </div>
-            );
-          }
-          return (
-            <button
-              key={kind}
+        <DailyRow
+          actions={
+            <Button
               type="button"
-              disabled={
-                isBusy ||
-                (isPottyAction && activeWalk === undefined) ||
-                (isRestAction && latest === undefined) ||
-                isCurrentRestState
-              }
-              aria-label={t("quick.logAria", { event: label })}
-              aria-describedby={`quick-state-${kind}`}
-              aria-busy={pendingOperation === kind}
-              className="min-h-24 bg-card px-3 py-3 text-left transition-colors duration-150 hover:bg-accent active:bg-muted focus-visible:z-10 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:bg-muted disabled:opacity-60 aria-busy:cursor-wait sm:px-4"
-              onClick={() => log({ kind, label })}
+              disabled={isBusy}
+              variant="secondary"
+              size="icon"
+              aria-label={t("quick.logAria", { event: t("events.meal") })}
+              aria-describedby="quick-state-meal"
+              aria-busy={pendingOperation === "meal"}
+              className={rowActionClassName}
+              onClick={() => log({ kind: "meal", label: t("events.meal") })}
             >
-              <span className="flex items-center gap-2.5">
-                <span
-                  className="w-5 shrink-0 text-center text-base leading-none"
-                  aria-hidden="true"
-                >
-                  {icon}
-                </span>
-                <strong className="text-sm leading-5 sm:text-base">
-                  {label}
-                </strong>
+              <span aria-hidden="true">+</span>
+            </Button>
+          }
+          className="lg:border-r"
+          context={latest?.meal ? t("daily.meals.since") : ""}
+          detail={
+            <span>
+              {summary.meal.nextLabel && (
+                <>
+                  {t("daily.meals.next", { label: summary.meal.nextLabel })}
+                  <span aria-hidden="true"> · </span>
+                </>
+              )}
+              <strong className="font-bold text-foreground">
+                {summary.meal.nextValue}
+              </strong>
+            </span>
+          }
+          icon="🍽️"
+          metric={summary.meal.elapsed}
+          metricLabel={t("timers.sinceMeal")}
+          statusId="quick-state-meal"
+          title={t("daily.meals.title")}
+        />
+
+        <DailyRow
+          actions={
+            <Button
+              ref={bathroomOpenerRef}
+              type="button"
+              disabled={isBusy || activeWalk === undefined}
+              variant="secondary"
+              size="icon"
+              aria-label={t(
+                isBathroomTrayOpen
+                  ? "daily.bathroom.closeAria"
+                  : "daily.bathroom.logAria",
+              )}
+              aria-describedby="quick-state-pee"
+              aria-expanded={isBathroomTrayOpen}
+              aria-controls="bathroom-action-tray"
+              aria-busy={
+                pendingOperation === "pee" || pendingOperation === "poop"
+              }
+              className={rowActionClassName}
+              onClick={() => setIsBathroomTrayOpen((isOpen) => !isOpen)}
+            >
+              <span
+                aria-hidden="true"
+                className={`transition-transform duration-150 ease-[var(--ease-out)] motion-reduce:transition-none ${isBathroomTrayOpen ? "rotate-45" : ""}`}
+              >
+                +
+              </span>
+            </Button>
+          }
+          context={latest?.pee ? t("daily.bathroom.since") : ""}
+          detail={t("daily.bathroom.poop", { elapsed: summary.poop })}
+          icon="🪴"
+          metric={summary.pee}
+          metricLabel={t("timers.sincePee")}
+          statusId="quick-state-pee"
+          title={t("daily.bathroom.title")}
+        />
+
+        {summary.water && (
+          <DailyRow
+            actions={
+              <Button
+                type="button"
+                disabled={isBusy}
+                variant="secondary"
+                size="icon"
+                aria-label={t("quick.logAria", { event: t("events.water") })}
+                aria-describedby="quick-state-water"
+                aria-busy={pendingOperation === "water"}
+                className={rowActionClassName}
+                onClick={() => log({ kind: "water", label: t("events.water") })}
+              >
+                <span aria-hidden="true">+</span>
+              </Button>
+            }
+            className="lg:border-r"
+            context={latest?.water ? t("daily.water.since") : ""}
+            detail={t("daily.water.detail", {
+              formattedCount: summary.water.count ?? t("common.checking"),
+              next: summary.water.next,
+            })}
+            icon="💧"
+            metric={summary.water.elapsed}
+            metricLabel={t("daily.water.metric")}
+            statusId="quick-state-water"
+            title={t("daily.water.title")}
+          />
+        )}
+
+        <DailyRow
+          actions={
+            <Button
+              type="button"
+              disabled={isBusy || latest === undefined}
+              variant="secondary"
+              size="icon"
+              aria-label={
+                sleepState === null
+                  ? t("daily.rest.setAria")
+                  : t("quick.logAria", {
+                      event: t(`events.${restKind}`),
+                    })
+              }
+              aria-describedby="quick-state-rest"
+              aria-haspopup={sleepState === null ? "dialog" : undefined}
+              aria-controls={
+                sleepState === null ? "rest-state-dialog" : undefined
+              }
+              aria-busy={pendingOperation === restKind}
+              className={rowActionClassName}
+              onClick={() =>
+                sleepState === null
+                  ? restDialogRef.current?.showModal()
+                  : log({ kind: restKind, label: t(`events.${restKind}`) })
+              }
+            >
+              <RowActionGlyph kind={restGlyph} />
+            </Button>
+          }
+          className={summary.water ? "" : "lg:border-r"}
+          context={summary.rest.state ? t(`timers.${summary.rest.state}`) : ""}
+          detail={restDetail}
+          icon="🌙"
+          metric={summary.rest.elapsed}
+          metricLabel={t("timers.restState")}
+          statusId="quick-state-rest"
+          title={t("daily.rest.title")}
+        />
+
+        <WalkControls
+          key={`walk-controls-${activeWalkKey}`}
+          activeWalk={activeWalk}
+          className={
+            summary.water
+              ? "lg:col-span-2 lg:grid-cols-[2.125rem_minmax(0,18rem)_auto_1fr]"
+              : ""
+          }
+          dog={dog}
+          isEarlier={isEarlier}
+          now={now}
+          onError={onError}
+          onDiarySaved={onWalkDiarySaved}
+          onOperationEnd={onBackdateOperationEnd}
+          onOperationStart={onWalkOperationStart}
+          onTransition={onWalkTransition}
+          pendingOperation={pendingOperation}
+          summary={summary.walk}
+          timeFormatter={timeFormatter}
+        />
+
+        <div className="border-border bg-muted/70 px-4 py-4 lg:col-span-2 sm:px-5">
+          <div className="mb-3 min-w-0">
+            <h2 className="text-sm font-bold">{t("daily.more.title")}</h2>
+            <p className="text-xs font-medium leading-4 text-muted-foreground">
+              {t("daily.more.hint")}
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            <button
+              type="button"
+              disabled={isBusy}
+              aria-label={t("quick.logAria", { event: t("events.treat") })}
+              aria-describedby="quick-state-treat"
+              aria-busy={pendingOperation === "treat"}
+              className="group grid min-h-16 min-w-0 grid-cols-[1.75rem_minmax(0,1fr)_1.375rem] items-center gap-x-2 gap-y-0.5 rounded-lg border border-border bg-card px-3 py-2 text-left transition-colors duration-150 hover:border-primary hover:bg-accent active:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:bg-muted disabled:opacity-60"
+              onClick={() => log({ kind: "treat", label: t("events.treat") })}
+            >
+              <span aria-hidden="true" className="text-center text-base">
+                🦴
+              </span>
+              <strong className="min-w-0 text-sm leading-5">
+                {t("events.treat")}
+              </strong>
+              <span
+                aria-hidden="true"
+                className="grid size-[1.375rem] place-items-center rounded-full bg-secondary text-sm font-bold text-primary"
+              >
+                +
               </span>
               <span
-                id={`quick-state-${kind}`}
-                className="mt-2 block text-sm leading-5 text-muted-foreground"
+                id="quick-state-treat"
+                className="col-span-3 block min-w-0 text-xs font-medium leading-4 text-muted-foreground sm:col-span-1 sm:col-start-2"
               >
-                {isPottyAction &&
-                activeWalk !== null &&
-                activeWalk !== undefined
-                  ? t("quick.duringWalk", { state })
-                  : state}
+                {summary.treat}
               </span>
             </button>
-          );
-        })}
-        <EnrichmentQuickLog
-          activityTypes={activityTypes}
-          disabled={isBusy}
-          dog={dog}
-          isEarlier={isEarlier}
-        />
-        <TrainingQuickLog
-          commands={trainingCommands}
-          disabled={isBusy}
-          dog={dog}
-          isEarlier={isEarlier}
-        />
+            <EnrichmentQuickLog
+              activityTypes={activityTypes}
+              disabled={isBusy}
+              dog={dog}
+              isEarlier={isEarlier}
+              today={summary.enrichment}
+            />
+            <TrainingQuickLog
+              commands={trainingCommands}
+              disabled={isBusy}
+              dog={dog}
+              isEarlier={isEarlier}
+              today={summary.training}
+            />
+          </div>
+        </div>
       </div>
+
+      <div
+        id="bathroom-action-tray"
+        ref={bathroomTrayRef}
+        popover="auto"
+        role="group"
+        aria-label={t("daily.bathroom.actionsAria")}
+        hidden={!isBathroomTrayOpen}
+        className="fixed inset-auto left-[var(--bathroom-tray-left)] top-[var(--bathroom-tray-top)] m-0 grid w-52 grid-cols-1 gap-1 rounded-lg border border-border bg-card p-1.5 text-foreground shadow-[var(--elevation-2)]"
+        onKeyDown={(event) => {
+          if (event.key !== "Escape") return;
+          setIsBathroomTrayOpen(false);
+          bathroomOpenerRef.current?.focus();
+        }}
+        onToggle={(event) => {
+          if (event.newState === "closed") setIsBathroomTrayOpen(false);
+        }}
+      >
+        <Button
+          type="button"
+          disabled={isBusy}
+          variant="quiet"
+          aria-label={t("quick.logPeeAria", {
+            place: t("peePlace.inside"),
+          })}
+          className="w-full justify-start px-3 py-2 text-left text-sm"
+          onClick={() =>
+            logBathroom({
+              kind: "pee",
+              label: t("events.pee"),
+              peePlace: "inside",
+            })
+          }
+        >
+          {t("daily.bathroom.peeInside")}
+        </Button>
+        <Button
+          type="button"
+          disabled={isBusy}
+          variant="quiet"
+          aria-label={t("quick.logPeeAria", {
+            place: t("peePlace.outside"),
+          })}
+          className="w-full justify-start px-3 py-2 text-left text-sm"
+          onClick={() =>
+            logBathroom({
+              kind: "pee",
+              label: t("events.pee"),
+              peePlace: "outside",
+            })
+          }
+        >
+          {t("daily.bathroom.peeOutside")}
+        </Button>
+        <Button
+          type="button"
+          disabled={isBusy}
+          variant="quiet"
+          aria-label={t("quick.logAria", { event: t("events.poop") })}
+          className="w-full justify-start px-3 py-2 text-left text-sm"
+          onClick={() => logBathroom({ kind: "poop", label: t("events.poop") })}
+        >
+          {t("events.poop")}
+        </Button>
+      </div>
+
+      <dialog
+        id="rest-state-dialog"
+        ref={restDialogRef}
+        aria-labelledby="rest-state-title"
+        aria-describedby="rest-state-description"
+        className="m-auto w-[min(24rem,calc(100%-2rem))] rounded-xl bg-card p-0 text-foreground shadow-[var(--elevation-2)] backdrop:bg-foreground/40"
+      >
+        <div className="p-5 sm:p-6">
+          <h3 id="rest-state-title" className="text-xl font-bold">
+            {t("daily.rest.title")}
+          </h3>
+          <p
+            id="rest-state-description"
+            className="mt-2 text-sm text-muted-foreground"
+          >
+            {t("daily.rest.choose")}
+          </p>
+          <div className="mt-5 grid grid-cols-2 gap-2">
+            <Button
+              type="button"
+              disabled={isBusy}
+              variant="secondary"
+              aria-label={t("quick.logAria", { event: t("events.wake") })}
+              onClick={() => logRest("wake")}
+            >
+              <RowActionGlyph kind="wake" />
+              {t("timers.awake")}
+            </Button>
+            <Button
+              type="button"
+              disabled={isBusy}
+              variant="secondary"
+              aria-label={t("quick.logAria", { event: t("events.sleep") })}
+              onClick={() => logRest("sleep")}
+            >
+              <RowActionGlyph kind="sleep" />
+              {t("timers.asleep")}
+            </Button>
+          </div>
+          <Button
+            type="button"
+            variant="quiet"
+            className="mt-2 w-full"
+            onClick={() => restDialogRef.current?.close()}
+          >
+            {t("common.cancel")}
+          </Button>
+        </div>
+      </dialog>
 
       <dialog
         ref={walkPromptDialogRef}
@@ -2315,20 +2612,6 @@ function QuickLogSection({
         )}
       </dialog>
 
-      <WalkControls
-        key={`walk-controls-${activeWalkKey}`}
-        activeWalk={activeWalk}
-        dog={dog}
-        now={now}
-        onError={onError}
-        onDiarySaved={onWalkDiarySaved}
-        onOperationEnd={onBackdateOperationEnd}
-        onOperationStart={onWalkOperationStart}
-        onTransition={onWalkTransition}
-        pendingOperation={pendingOperation}
-        timeFormatter={timeFormatter}
-      />
-
       <BackdateForm
         key={`backdate-${activeWalkKey}`}
         activeWalk={activeWalk}
@@ -2375,13 +2658,16 @@ function EnrichmentQuickLog({
   disabled,
   dog,
   isEarlier,
+  today,
 }: {
   activityTypes: ActivityTypes | undefined;
   disabled: boolean;
   dog: DashboardDog;
   isEarlier: boolean;
+  today: TodayActivities;
 }) {
-  const { t } = useTranslation("dashboard");
+  const { i18n, t } = useTranslation("dashboard");
+  const locale = resolveBrowserLocale(i18n.languages);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const openerRef = useRef<HTMLButtonElement>(null);
   const pendingRef = useRef(false);
@@ -2400,6 +2686,7 @@ function EnrichmentQuickLog({
   const [isOpen, setIsOpen] = useState(false);
   const [isPending, setIsPending] = useState(false);
   const activeSelected = selected.filter((id) => activeIds.has(id));
+  const activeSelectedIds = new Set(activeSelected);
 
   const close = () => dialogRef.current?.close();
   const reset = () => {
@@ -2443,27 +2730,29 @@ function EnrichmentQuickLog({
         disabled={disabled}
         aria-label={t("enrichment.openAria")}
         aria-describedby="quick-state-enrichment"
-        className="min-h-24 bg-card px-3 py-3 text-left transition-colors duration-150 hover:bg-accent active:bg-muted focus-visible:z-10 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:bg-muted disabled:opacity-60 sm:px-4"
+        className="group grid min-h-16 min-w-0 grid-cols-[1.75rem_minmax(0,1fr)_1.375rem] items-center gap-x-2 gap-y-0.5 rounded-lg border border-border bg-card px-3 py-2 text-left transition-colors duration-150 hover:border-primary hover:bg-accent active:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:bg-muted disabled:opacity-60"
         onClick={() => {
           setIsOpen(true);
           dialogRef.current?.showModal();
         }}
       >
-        <span className="flex items-center gap-2.5">
-          <span aria-hidden="true" className="w-5 shrink-0 text-center">
-            ✦
-          </span>
-          <strong className="text-sm leading-5 sm:text-base">
-            {t("enrichment.label")}
-          </strong>
+        <span aria-hidden="true" className="text-center text-base">
+          🎾
+        </span>
+        <strong className="min-w-0 text-sm leading-5">
+          {t("daily.play.title")}
+        </strong>
+        <span
+          aria-hidden="true"
+          className="grid size-[1.375rem] place-items-center rounded-full bg-secondary text-sm font-bold text-primary"
+        >
+          +
         </span>
         <span
           id="quick-state-enrichment"
-          className="mt-2 block text-sm leading-5 text-muted-foreground"
+          className="col-span-3 block min-w-0 text-xs font-medium leading-4 text-muted-foreground sm:col-span-1 sm:col-start-2"
         >
-          {activityTypes === undefined
-            ? t("common.checking")
-            : t("enrichment.choose")}
+          <ActivityCountSummary items={today} kind="enrichment" />
         </span>
       </button>
       <dialog
@@ -2518,30 +2807,48 @@ function EnrichmentQuickLog({
                   {t("enrichment.activities")}
                 </legend>
                 <div className="mt-2 grid max-h-64 gap-2 overflow-y-auto">
-                  {active.map((activity) => (
-                    <label
-                      key={activity._id}
-                      className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border border-border px-3 py-2 has-[:checked]:bg-secondary"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={activeSelected.includes(activity._id)}
-                        onChange={() => {
-                          setSelected((current) => {
-                            const available = current.filter((id) =>
-                              activeIds.has(id),
-                            );
-                            return available.includes(activity._id)
-                              ? available.filter((id) => id !== activity._id)
-                              : [...available, activity._id];
-                          });
-                          setError("");
-                        }}
-                      />
-                      <span aria-hidden="true">{activity.emoji ?? "🐾"}</span>
-                      <span className="font-semibold">{activity.name}</span>
-                    </label>
-                  ))}
+                  {active.map((activity) => {
+                    const countId = `enrichment-today-${activity._id}`;
+                    const displayCount =
+                      today?.find(({ id }) => id === activity._id)
+                        ?.displayCount ?? formatNumber(0, locale);
+                    return (
+                      <label
+                        key={activity._id}
+                        className="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border border-border px-3 py-2 has-[:checked]:bg-secondary"
+                      >
+                        <input
+                          type="checkbox"
+                          aria-label={activity.name}
+                          aria-describedby={countId}
+                          checked={activeSelectedIds.has(activity._id)}
+                          onChange={() => {
+                            setSelected((current) => {
+                              const available = current.filter((id) =>
+                                activeIds.has(id),
+                              );
+                              return available.includes(activity._id)
+                                ? available.filter((id) => id !== activity._id)
+                                : [...available, activity._id];
+                            });
+                            setError("");
+                          }}
+                        />
+                        <span aria-hidden="true">{activity.emoji ?? "🐾"}</span>
+                        <span className="min-w-0 flex-1 font-semibold">
+                          {activity.name}
+                        </span>
+                        <span
+                          id={countId}
+                          className="shrink-0 text-xs font-medium text-muted-foreground"
+                        >
+                          {t("daily.more.optionCount", {
+                            formattedCount: displayCount,
+                          })}
+                        </span>
+                      </label>
+                    );
+                  })}
                 </div>
               </fieldset>
             )}
@@ -2575,13 +2882,16 @@ function TrainingQuickLog({
   disabled,
   dog,
   isEarlier,
+  today,
 }: {
   commands: TrainingCommands | undefined;
   disabled: boolean;
   dog: DashboardDog;
   isEarlier: boolean;
+  today: TodayActivities;
 }) {
-  const { t } = useTranslation("dashboard");
+  const { i18n, t } = useTranslation("dashboard");
+  const locale = resolveBrowserLocale(i18n.languages);
   const dialogRef = useRef<HTMLDialogElement>(null);
   const openerRef = useRef<HTMLButtonElement>(null);
   const pendingRef = useRef(false);
@@ -2675,25 +2985,29 @@ function TrainingQuickLog({
         disabled={disabled}
         aria-label={t("training.openAria")}
         aria-describedby="quick-state-training"
-        className="min-h-24 bg-card px-3 py-3 text-left transition-colors duration-150 hover:bg-accent active:bg-muted focus-visible:z-10 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring sm:px-4"
+        className="group grid min-h-16 min-w-0 grid-cols-[1.75rem_minmax(0,1fr)_1.375rem] items-center gap-x-2 gap-y-0.5 rounded-lg border border-border bg-card px-3 py-2 text-left transition-colors duration-150 hover:border-primary hover:bg-accent active:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:bg-muted disabled:opacity-60"
         onClick={() => {
           setIsOpen(true);
           dialogRef.current?.showModal();
         }}
       >
-        <span className="flex items-center gap-2.5">
-          <span aria-hidden="true" className="w-4 shrink-0 text-center text-sm">
-            ◆
-          </span>
-          <strong className="text-sm leading-5 sm:text-base">
-            {t("training.label")}
-          </strong>
+        <span aria-hidden="true" className="text-center text-base">
+          ⭐
+        </span>
+        <strong className="min-w-0 text-sm leading-5">
+          {t("training.label")}
+        </strong>
+        <span
+          aria-hidden="true"
+          className="grid size-[1.375rem] place-items-center rounded-full bg-secondary text-sm font-bold text-primary"
+        >
+          +
         </span>
         <span
           id="quick-state-training"
-          className="mt-2 block text-sm leading-5 text-muted-foreground"
+          className="col-span-3 block min-w-0 text-xs font-medium leading-4 text-muted-foreground sm:col-span-1 sm:col-start-2"
         >
-          {commands === undefined ? t("common.checking") : t("training.choose")}
+          <ActivityCountSummary items={today} kind="training" />
         </span>
       </button>
       <dialog
@@ -2745,6 +3059,10 @@ function TrainingQuickLog({
                       const session = availableSessions.find(
                         ({ commandId }) => commandId === command._id,
                       );
+                      const countId = `training-today-${command._id}`;
+                      const displayCount =
+                        today?.find(({ id }) => id === command._id)
+                          ?.displayCount ?? formatNumber(0, locale);
                       return (
                         <div
                           key={command._id}
@@ -2753,6 +3071,8 @@ function TrainingQuickLog({
                           <label className="flex min-h-8 cursor-pointer items-center gap-3">
                             <input
                               type="checkbox"
+                              aria-label={command.name}
+                              aria-describedby={countId}
                               checked={session !== undefined}
                               onChange={() => {
                                 setSessions((current) => {
@@ -2777,8 +3097,16 @@ function TrainingQuickLog({
                                 setRatingErrorCommandId(undefined);
                               }}
                             />
-                            <span className="font-semibold">
+                            <span className="min-w-0 flex-1 font-semibold">
                               {command.name}
+                            </span>
+                            <span
+                              id={countId}
+                              className="shrink-0 text-xs font-medium text-muted-foreground"
+                            >
+                              {t("daily.more.optionCount", {
+                                formattedCount: displayCount,
+                              })}
                             </span>
                           </label>
                           {session && (
@@ -3624,19 +3952,13 @@ function DashboardPage({ dog }: { dog: DashboardDog }) {
     () => new Map(activityTypes?.map((type) => [type._id, type]) ?? []),
     [activityTypes],
   );
-  const { dateFormatter, dayFormatter, timeFormatter } = useMemo(
+  const { dateFormatter, timeFormatter } = useMemo(
     () => ({
       dateFormatter: new Intl.DateTimeFormat(locale, {
         day: "numeric",
         month: "short",
         timeZone: dog.timezone,
         year: "numeric",
-      }),
-      dayFormatter: new Intl.DateTimeFormat(locale, {
-        day: "numeric",
-        month: "long",
-        timeZone: dog.timezone,
-        weekday: "long",
       }),
       timeFormatter: new Intl.DateTimeFormat(locale, {
         hour: "2-digit",
@@ -3746,50 +4068,6 @@ function DashboardPage({ dog }: { dog: DashboardDog }) {
     ? deriveSleepState(latest.wake, latest.sleep)
     : undefined;
   const latestWalk = latest?.walk;
-  const rightNowItems = [
-    { label: t("timers.sinceMeal"), value: elapsed(latest?.meal) },
-    {
-      detail: nextMeal?.label,
-      label: t("timers.nextMeal"),
-      value:
-        now === null || routines === undefined
-          ? t("timers.syncing")
-          : nextMeal
-            ? formatElapsed(nextMeal.countdownMs, locale)
-            : t("timers.noMeal"),
-    },
-    { label: t("timers.sincePee"), value: elapsed(latest?.pee) },
-    { label: t("timers.sincePoop"), value: elapsed(latest?.poop) },
-    {
-      detail: sleepState
-        ? sleepState.state === "awake"
-          ? t("timers.awake")
-          : t("timers.asleep")
-        : undefined,
-      label: t("timers.restState"),
-      value:
-        now === null || latest === undefined
-          ? t("timers.syncing")
-          : sleepState
-            ? formatElapsed(getElapsedMs(sleepState.startedAt, now), locale)
-            : t("timers.noState"),
-    },
-    {
-      label:
-        latestWalk && latestWalk.endedAt === undefined
-          ? t("timers.currentWalk")
-          : t("timers.sinceWalk"),
-      value:
-        now === null || latest === undefined
-          ? t("timers.syncing")
-          : latestWalk
-            ? formatElapsed(
-                getElapsedMs(latestWalk.endedAt ?? latestWalk.at, now),
-                locale,
-              )
-            : t("timers.noWalk"),
-    },
-  ];
   const trainingToday = useMemo(
     () =>
       trainingDay?.length === undefined
@@ -3818,6 +4096,112 @@ function DashboardPage({ dog }: { dog: DashboardDog }) {
           })),
     [enrichmentDay, locale],
   );
+  const todayEvents =
+    recent === undefined || dayWindow === null
+      ? undefined
+      : recent.filter(
+          ({ at }) => at >= dayWindow.startAt && at < dayWindow.endAt,
+        );
+  const todayWalks = todayEvents?.filter(({ kind }) => kind === "walk");
+  const restTodayMs =
+    overviewItems === undefined || dayWindow === null || now === null
+      ? undefined
+      : getRestTodayMs(overviewItems, dayWindow.startAt, dayWindow.endAt, now);
+  const activityCount =
+    overviewItems === undefined || dayWindow === null
+      ? undefined
+      : overviewItems.filter(
+          ({ at }) => at >= dayWindow.startAt && at < dayWindow.endAt,
+        ).length;
+  const dailySummary: DailySummary = {
+    activityCount:
+      activityCount === undefined
+        ? undefined
+        : formatNumber(activityCount, locale),
+    enrichment: enrichmentToday,
+    isLoading:
+      now === null ||
+      latest === undefined ||
+      routines === undefined ||
+      recent === undefined ||
+      trainingDay === undefined ||
+      enrichmentDay === undefined ||
+      (dog.waterIntervalMinutes !== undefined && waterToday === undefined),
+    meal: {
+      elapsed: elapsed(latest?.meal),
+      nextLabel: nextMeal?.label,
+      nextValue:
+        now === null || routines === undefined
+          ? t("timers.syncing")
+          : nextMeal
+            ? formatElapsed(nextMeal.countdownMs, locale)
+            : t("timers.noMeal"),
+    },
+    pee: elapsed(latest?.pee),
+    poop: elapsed(latest?.poop),
+    rest: {
+      elapsed:
+        now === null || latest === undefined
+          ? t("timers.syncing")
+          : sleepState
+            ? formatElapsed(getElapsedMs(sleepState.startedAt, now), locale)
+            : t("timers.noState"),
+      startedAt: sleepState
+        ? timeFormatter.format(sleepState.startedAt)
+        : undefined,
+      state: sleepState?.state,
+    },
+    restToday:
+      restTodayMs === undefined || restTodayMs === 0
+        ? undefined
+        : formatElapsed(restTodayMs, locale),
+    training: trainingToday,
+    treat:
+      todayEvents === undefined
+        ? t("common.checking")
+        : t("daily.more.today", {
+            formattedCount: formatNumber(
+              todayEvents.filter(({ kind }) => kind === "treat").length,
+              locale,
+            ),
+          }),
+    updatedAt: now === null ? undefined : timeFormatter.format(now),
+    walk: {
+      count:
+        todayWalks === undefined
+          ? undefined
+          : formatNumber(todayWalks.length, locale),
+      duration:
+        latestWalk?.endedAt === undefined
+          ? undefined
+          : formatElapsed(
+              getElapsedMs(latestWalk.at, latestWalk.endedAt),
+              locale,
+            ),
+      elapsed:
+        now === null || latest === undefined
+          ? t("timers.syncing")
+          : latestWalk
+            ? formatElapsed(
+                getElapsedMs(latestWalk.endedAt ?? latestWalk.at, now),
+                locale,
+              )
+            : t("timers.noWalk"),
+      hasLatest: latestWalk !== undefined && latestWalk !== null,
+    },
+    ...(dog.waterIntervalMinutes === undefined
+      ? {}
+      : {
+          water: {
+            count:
+              waterToday === undefined
+                ? undefined
+                : formatNumber(waterToday, locale),
+            elapsed: elapsed(latest?.water),
+            next: nextWater ?? t("timers.syncing"),
+          },
+        }),
+  };
 
   const beginOperation = (operation: Exclude<PendingOperation, null>) => {
     if (operationPending.current) return false;
@@ -3985,27 +4369,30 @@ function DashboardPage({ dog }: { dog: DashboardDog }) {
 
   return (
     <AppFrame dogName={dog.name}>
-      <section className="py-6 sm:py-8" aria-labelledby="dashboard-title">
-        <p className="text-sm font-medium text-muted-foreground">
-          {now === null ? t("page.syncingDay") : dayFormatter.format(now)} ·{" "}
-          {t("page.today")}
-        </p>
-        <h1
-          id="dashboard-title"
-          className="mt-2 text-balance text-[1.75rem] font-bold leading-[2.125rem]"
-        >
-          {t("page.greeting", { dogName: dog.name })}
-        </h1>
-        <p className="mt-3 max-w-[70ch] text-pretty text-base leading-6 text-muted-foreground">
-          {t("page.description")}
-        </p>
-      </section>
-
-      <RightNowSummary
-        enrichment={enrichmentToday}
-        isLoading={latest === undefined || routines === undefined}
-        items={rightNowItems}
-        training={trainingToday}
+      <QuickLogSection
+        activeWalk={activeWalk}
+        activityTypes={activityTypes}
+        dog={dog}
+        error={error}
+        feedback={feedback}
+        hasUndo={undoTarget !== null}
+        latest={latest}
+        onBackdated={backdated}
+        onBackdateOperationEnd={endOperation}
+        onBackdateOperationStart={startBackdateOperation}
+        onError={setError}
+        onLog={log}
+        onStartWalkForPotty={startWalkForPotty}
+        onUndo={() => void undo()}
+        onWalkDiarySaved={walkDiarySaved}
+        onWalkOperationStart={beginOperation}
+        onWalkTransition={walkTransition}
+        now={now}
+        pendingOperation={pendingOperation}
+        sleepState={sleepState}
+        summary={dailySummary}
+        timeFormatter={timeFormatter}
+        trainingCommands={trainingCommands}
       />
 
       {dayWindow && now !== null && (
@@ -4018,53 +4405,18 @@ function DashboardPage({ dog }: { dog: DashboardDog }) {
         />
       )}
 
-      {dog.waterIntervalMinutes !== undefined && (
-        <WaterTodaySummary
-          count={
-            waterToday === undefined
-              ? undefined
-              : formatNumber(waterToday, locale)
-          }
-          nextDrink={nextWater}
-        />
-      )}
-
-      <AgendaSummary agenda={agenda} />
-
-      <div className="flex flex-col gap-8">
-        <QuickLogSection
-          activeWalk={activeWalk}
-          activityTypes={activityTypes}
-          dog={dog}
-          error={error}
-          feedback={feedback}
-          hasUndo={undoTarget !== null}
-          latest={latest}
-          onBackdated={backdated}
-          onBackdateOperationEnd={endOperation}
-          onBackdateOperationStart={startBackdateOperation}
-          onError={setError}
-          onLog={log}
-          onStartWalkForPotty={startWalkForPotty}
-          onUndo={() => void undo()}
-          onWalkDiarySaved={walkDiarySaved}
-          onWalkOperationStart={beginOperation}
-          onWalkTransition={walkTransition}
-          now={now}
-          pendingOperation={pendingOperation}
-          sleepState={sleepState}
-          timeFormatter={timeFormatter}
-          trainingCommands={trainingCommands}
-        />
-        <RecentActivity
-          activityTypesById={activityTypesById}
-          dateFormatter={dateFormatter}
-          dog={dog}
-          now={now}
-          recent={recent?.slice(0, 8)}
-          timeFormatter={timeFormatter}
-        />
+      <div className="pb-6">
+        <AgendaSummary agenda={agenda} />
       </div>
+
+      <RecentActivity
+        activityTypesById={activityTypesById}
+        dateFormatter={dateFormatter}
+        dog={dog}
+        now={now}
+        recent={recent?.slice(0, 8)}
+        timeFormatter={timeFormatter}
+      />
     </AppFrame>
   );
 }

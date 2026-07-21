@@ -3,18 +3,30 @@ import { expect, type Page, test } from "@playwright/test";
 const recentActivity = (page: Page) =>
   page.getByRole("region", { name: "Recent activity" });
 
+const dailySummary = (page: Page) =>
+  page.getByRole("region", { name: /^Today with / });
+
 const summaryItem = (page: Page, label: string) =>
-  page
-    .getByRole("region", { name: "Right now" })
-    .getByRole("term")
-    .filter({ hasText: label })
-    .locator("..");
+  dailySummary(page).getByRole("term").filter({ hasText: label }).locator("..");
 
 const activityRow = (page: Page, label: string) =>
   recentActivity(page)
     .getByRole("listitem")
     .filter({ has: page.getByText(label, { exact: true }) })
     .first();
+
+const chooseBathroomAction = async (
+  page: Page,
+  name: "Log pee · Inside" | "Log pee · Outside" | "Log Poop",
+) => {
+  await dailySummary(page)
+    .getByRole("button", { name: "Log bathroom" })
+    .click();
+  await page
+    .getByRole("group", { name: "Bathroom actions" })
+    .getByRole("button", { name })
+    .click();
+};
 
 test("a household can log and manage live activity", async ({
   browser,
@@ -45,18 +57,46 @@ test("a household can log and manage live activity", async ({
 
   await expect(page).toHaveURL(/\/$/);
   await expect(
-    page.getByRole("heading", { name: `Hello, ${dogName}.` }),
+    page.getByRole("heading", { level: 1, name: `Today with ${dogName}` }),
   ).toBeVisible();
 
   const secondPage = await context.newPage();
   await secondPage.goto("/");
   await expect(
-    secondPage.getByRole("heading", { name: `Hello, ${dogName}.` }),
+    secondPage.getByRole("heading", {
+      level: 1,
+      name: `Today with ${dogName}`,
+    }),
   ).toBeVisible();
 
-  const quickLog = page.getByRole("region", { name: "Log an activity" });
+  const quickLog = dailySummary(page);
   await page.setViewportSize({ height: 720, width: 320 });
-  await quickLog.getByRole("button", { name: "Log Pee", exact: true }).click();
+  await quickLog.getByRole("button", { name: "Log bathroom" }).click();
+  const bathroomPicker = quickLog.getByRole("group", {
+    name: "Bathroom actions",
+  });
+  expect(
+    (await bathroomPicker.boundingBox())?.width ?? 321,
+  ).toBeLessThanOrEqual(320);
+  for (const buttonName of [
+    "Log pee · Inside",
+    "Log pee · Outside",
+    "Log Poop",
+  ]) {
+    expect(
+      (
+        await bathroomPicker
+          .getByRole("button", { name: buttonName })
+          .boundingBox()
+      )?.height ?? 0,
+    ).toBeGreaterThanOrEqual(44);
+  }
+  await page.keyboard.press("Escape");
+  await expect(bathroomPicker).toBeHidden();
+  await quickLog.getByRole("button", { name: "Log bathroom" }).click();
+  await bathroomPicker
+    .getByRole("button", { name: "Log pee · Outside" })
+    .click();
   const mobileWalkPrompt = page.getByRole("dialog", {
     name: "Are you on a walk?",
   });
@@ -80,7 +120,7 @@ test("a household can log and manage live activity", async ({
   await expect(
     recentActivity(secondPage).getByText("Pee", { exact: true }),
   ).toHaveCount(0);
-  await quickLog.getByRole("button", { name: "Log Pee", exact: true }).click();
+  await chooseBathroomAction(page, "Log pee · Outside");
   await noWalkButton.click();
   await page.setViewportSize({ height: 720, width: 1280 });
   await expect(quickLog.getByRole("status")).toContainText(
@@ -94,8 +134,8 @@ test("a household can log and manage live activity", async ({
     { timeout: 1_000 },
   );
   await expect(
-    secondPage.getByRole("button", { name: "Log Pee", exact: true }),
-  ).toContainText("Last");
+    secondPage.getByRole("button", { name: "Log bathroom" }),
+  ).toBeEnabled();
 
   await quickLog.getByRole("button", { name: "Log Meal" }).click();
   await expect(summaryItem(secondPage, "Since last meal")).toContainText(
@@ -125,7 +165,7 @@ test("a household can log and manage live activity", async ({
   await expect(recent.getByRole("status")).toContainText("Treat deleted.");
   await expect(recent.getByText("Updated E2E note")).toHaveCount(0);
 
-  await quickLog.getByRole("button", { name: "Log Poop" }).click();
+  await chooseBathroomAction(page, "Log Poop");
   const walkPrompt = page.getByRole("dialog", {
     name: "Are you on a walk?",
   });
@@ -139,8 +179,8 @@ test("a household can log and manage live activity", async ({
   await expect(quickLog.getByRole("status")).toContainText("Last log removed.");
   await expect(recent.getByText("Poop", { exact: true })).toHaveCount(0);
 
-  const activeWalk = secondPage.getByRole("region", {
-    name: "Walk in progress",
+  const activeWalk = dailySummary(secondPage).getByRole("group", {
+    name: "Walk",
   });
   await expect(activeWalk).toContainText(/\d+(?:s|m|h|d)/, {
     timeout: 1_000,
@@ -150,14 +190,12 @@ test("a household can log and manage live activity", async ({
     { timeout: 1_000 },
   );
 
-  const pee = quickLog.getByRole("button", { name: "Log Pee", exact: true });
-  await expect(pee).toContainText("During walk", { timeout: 1_000 });
-  await pee.click();
+  await chooseBathroomAction(page, "Log pee · Outside");
   await expect(activityRow(secondPage, "Pee")).toContainText("During walk", {
     timeout: 1_000,
   });
 
-  const pageAWalk = page.getByRole("region", { name: "Walk in progress" });
+  const pageAWalk = dailySummary(page).getByRole("group", { name: "Walk" });
   await pageAWalk.getByRole("button", { name: "Add walk diary" }).click();
   const diary = pageAWalk.getByRole("form", { name: "Walk diary" });
   await diary
@@ -210,20 +248,22 @@ test("a household can log and manage live activity", async ({
   await expect(recent.getByText("Retroactive walk poop")).toBeVisible();
   await expect(activityRow(page, "Poop")).toContainText("During walk");
 
-  await quickLog.getByRole("button", { name: "Log Fell asleep" }).click();
+  await quickLog.getByRole("button", { name: "Set rest state" }).click();
+  await page
+    .getByRole("dialog", { name: "Rest" })
+    .getByRole("button", { name: "Log Fell asleep" })
+    .click();
   await expect(summaryItem(secondPage, "Current rest state")).toContainText(
     "Asleep",
     { timeout: 1_000 },
   );
-  const secondQuickLog = secondPage.getByRole("region", {
-    name: "Log an activity",
-  });
+  const secondQuickLog = dailySummary(secondPage);
   await expect(
     secondQuickLog.getByRole("button", { name: "Log Woke up" }),
   ).toBeEnabled({ timeout: 1_000 });
   await expect(
     secondQuickLog.getByRole("button", { name: "Log Fell asleep" }),
-  ).toBeDisabled({ timeout: 1_000 });
+  ).toHaveCount(0);
 
   await secondQuickLog.getByRole("button", { name: "Log Woke up" }).click();
   await expect(summaryItem(page, "Current rest state")).toContainText("Awake", {
@@ -231,7 +271,7 @@ test("a household can log and manage live activity", async ({
   });
   await expect(
     quickLog.getByRole("button", { name: "Log Woke up" }),
-  ).toBeDisabled({ timeout: 1_000 });
+  ).toHaveCount(0);
   await expect(
     quickLog.getByRole("button", { name: "Log Fell asleep" }),
   ).toBeEnabled({ timeout: 1_000 });
@@ -268,15 +308,22 @@ test("a household can log and manage live activity", async ({
   const quickEnrichment = page.getByRole("dialog", {
     name: "Log enrichment",
   });
+  await expect(
+    quickEnrichment.getByRole("checkbox", { name: "Cafe visit" }),
+  ).toHaveAccessibleDescription("Today ×1");
   await quickEnrichment.getByRole("checkbox", { name: "Cafe visit" }).check();
   await quickEnrichment.getByRole("checkbox", { name: "Snuffle mat" }).check();
+  await quickEnrichment.getByRole("checkbox", { name: "Tug" }).check();
   await quickEnrichment
-    .getByRole("button", { name: "Save enrichment" })
+    .getByRole("button", { name: "Save", exact: true })
     .click();
   await expect(quickEnrichment).not.toBeVisible();
   await expect(activityRow(secondPage, "Snuffle mat")).toBeVisible({
     timeout: 1_000,
   });
+  await expect(
+    dailySummary(page).getByRole("button", { name: "Log enrichment" }),
+  ).toContainText("3 activities · 4 logs");
   await page
     .getByRole("navigation", { name: "Notebook sections" })
     .getByRole("link", { name: "Enrichment" })
@@ -326,14 +373,20 @@ test("a household can log and manage live activity", async ({
 
   await createCommand.getByLabel("Command name").fill("Stay");
   await createCommand.getByRole("button", { name: "Add command" }).click();
+  await createCommand.getByLabel("Command name").fill("Heel");
+  await createCommand.getByRole("button", { name: "Add command" }).click();
   await page
     .getByRole("navigation", { name: "Notebook sections" })
     .getByRole("link", { name: "Today" })
     .click();
   await page.getByRole("button", { name: "Log training" }).click();
   const quickTraining = page.getByRole("dialog", { name: "Log training" });
+  await expect(
+    quickTraining.getByRole("checkbox", { name: "Recall" }),
+  ).toHaveAccessibleDescription("Today ×0");
   await quickTraining.getByRole("checkbox", { name: "Recall" }).check();
   await quickTraining.getByRole("checkbox", { name: "Stay" }).check();
+  await quickTraining.getByRole("checkbox", { name: "Heel" }).check();
   await quickTraining
     .getByRole("group", { name: "How did Recall go?" })
     .getByRole("radio", { name: "Positive" })
@@ -344,13 +397,17 @@ test("a household can log and manage live activity", async ({
     .getByRole("radio", { name: "Neutral" })
     .locator("..")
     .click();
+  await quickTraining
+    .getByRole("group", { name: "How did Heel go?" })
+    .getByRole("radio", { name: "Positive" })
+    .locator("..")
+    .click();
   await quickTraining.getByRole("button", { name: "Save training" }).click();
   await expect(quickTraining).not.toBeVisible();
-  const rightNow = page.getByRole("region", { name: "Right now" });
-  await expect(rightNow.getByLabel("Recall: 1 today")).toHaveText("1×", {
-    timeout: 1_000,
-  });
-  await expect(rightNow.getByLabel("Stay: 1 today")).toHaveText("1×");
+  const today = dailySummary(page);
+  await expect(
+    today.getByRole("button", { name: "Log training" }),
+  ).toContainText("3 commands · 3 sessions", { timeout: 1_000 });
   await page
     .getByRole("navigation", { name: "Notebook sections" })
     .getByRole("link", { name: "Training" })
@@ -652,7 +709,10 @@ test("a household can log and manage live activity", async ({
 
     await expect(memberPage).toHaveURL(/\/$/);
     await expect(
-      memberPage.getByRole("heading", { name: `Hello, ${dogName}.` }),
+      memberPage.getByRole("heading", {
+        level: 1,
+        name: `Today with ${dogName}`,
+      }),
     ).toBeVisible();
     await expect(page.getByText(memberEmail, { exact: true })).toBeVisible({
       timeout: 1_000,
@@ -666,12 +726,8 @@ test("a household can log and manage live activity", async ({
     const ownerLatestActivity = recentActivity(page)
       .getByRole("listitem")
       .first();
-    const memberQuickLog = memberPage.getByRole("region", {
-      name: "Log an activity",
-    });
-    await memberQuickLog
-      .getByRole("button", { name: "Log Pee", exact: true })
-      .click();
+    const memberQuickLog = dailySummary(memberPage);
+    await chooseBathroomAction(memberPage, "Log pee · Outside");
     await memberPage
       .getByRole("dialog", { name: "Are you on a walk?" })
       .getByRole("button", { name: "No", exact: true })
@@ -727,7 +783,10 @@ test("a household can log and manage live activity", async ({
 
     await slovakNavigation.getByRole("link", { name: "Dnes" }).click();
     await expect(
-      page.getByRole("heading", { name: `Ahoj, ${dogName}.` }),
+      page.getByRole("heading", {
+        level: 1,
+        name: `Dnes s ${dogName}`,
+      }),
     ).toBeVisible();
     const slovakRecent = page.getByRole("region", {
       name: "Nedávna aktivita",
@@ -742,7 +801,10 @@ test("a household can log and manage live activity", async ({
       memberPage.getByRole("navigation", { name: "Notebook sections" }),
     ).toBeVisible();
     await expect(
-      memberPage.getByRole("heading", { name: `Hello, ${dogName}.` }),
+      memberPage.getByRole("heading", {
+        level: 1,
+        name: `Today with ${dogName}`,
+      }),
     ).toBeVisible();
     await expect(
       recentActivity(memberPage)
