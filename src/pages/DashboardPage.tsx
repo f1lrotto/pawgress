@@ -133,6 +133,7 @@ const rowActionClassName =
   "rounded-lg text-xl font-normal leading-none text-primary [&_svg]:size-5";
 
 const rowActionGlyphPaths = {
+  chevron: <path d="m6 9 6 6 6-6" />,
   play: <path d="m7 4 13 8-13 8Z" />,
   rest: (
     <>
@@ -2217,9 +2218,9 @@ function QuickLogSection({
             >
               <span
                 aria-hidden="true"
-                className={`transition-transform duration-150 ease-[var(--ease-out)] motion-reduce:transition-none ${isBathroomTrayOpen ? "rotate-45" : ""}`}
+                className={`transition-transform duration-150 ease-[var(--ease-out)] motion-reduce:transition-none ${isBathroomTrayOpen ? "rotate-180" : ""}`}
               >
-                +
+                <RowActionGlyph kind="chevron" />
               </span>
             </Button>
           }
@@ -2388,7 +2389,7 @@ function QuickLogSection({
         role="group"
         aria-label={t("daily.bathroom.actionsAria")}
         hidden={!isBathroomTrayOpen}
-        className="fixed inset-auto left-[var(--bathroom-tray-left)] top-[var(--bathroom-tray-top)] m-0 grid w-52 grid-cols-1 gap-1 rounded-lg border border-border bg-card p-1.5 text-foreground shadow-[var(--elevation-2)]"
+        className="fixed inset-auto left-[var(--bathroom-tray-left)] top-[var(--bathroom-tray-top)] m-0 grid h-auto w-52 grid-cols-1 gap-1 rounded-lg border border-border bg-card p-1.5 text-foreground shadow-[var(--elevation-2)]"
         onKeyDown={(event) => {
           if (event.key !== "Escape") return;
           setIsBathroomTrayOpen(false);

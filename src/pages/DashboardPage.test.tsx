@@ -568,6 +568,9 @@ describe("DashboardPage quick logging", () => {
     expect(bathroom).toHaveAttribute("aria-expanded", "false");
     expect(bathroom).toHaveAttribute("aria-controls", "bathroom-action-tray");
     expect(bathroom).toHaveClass("size-11", "rounded-lg");
+    expect(
+      bathroom.querySelector('[data-action-glyph="chevron"]'),
+    ).toBeVisible();
 
     const rest = within(actionGroup).getByRole("button", {
       name: "Set rest state",
@@ -592,6 +595,10 @@ describe("DashboardPage quick logging", () => {
     });
 
     expect(close).toHaveAttribute("aria-expanded", "true");
+    expect(
+      close.querySelector('[data-action-glyph="chevron"]')?.parentElement,
+    ).toHaveClass("rotate-180");
+    expect(tray).toHaveClass("h-auto");
 
     const firstAction = within(tray).getByRole("button", {
       name: "Log pee · Inside",

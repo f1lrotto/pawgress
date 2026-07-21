@@ -75,9 +75,9 @@ test("a household can log and manage live activity", async ({
   const bathroomPicker = quickLog.getByRole("group", {
     name: "Bathroom actions",
   });
-  expect(
-    (await bathroomPicker.boundingBox())?.width ?? 321,
-  ).toBeLessThanOrEqual(320);
+  const bathroomPickerBox = await bathroomPicker.boundingBox();
+  expect(bathroomPickerBox?.width ?? 321).toBeLessThanOrEqual(320);
+  expect(bathroomPickerBox?.height ?? 181).toBeLessThanOrEqual(180);
   for (const buttonName of [
     "Log pee · Inside",
     "Log pee · Outside",
