@@ -101,10 +101,13 @@ describe("DayOverview", () => {
     expect(
       container.querySelector('[data-activity-kind="walk"][title]'),
     ).toHaveAttribute("aria-label", expect.stringContaining("11:16–11:58"));
+    expect(
+      container.querySelector('[data-activity-kind="wake"]'),
+    ).not.toBeInTheDocument();
     const cluster = screen.getByRole("button", {
-      name: /Woke up, Pee, Meal, Training/,
+      name: /Pee, Meal, Training/,
     });
-    expect(cluster).toHaveAccessibleName(/Woke up, Pee, Meal, Training/);
+    expect(cluster).toHaveAccessibleName(/Pee, Meal, Training/);
     expect(cluster).toHaveAttribute("aria-expanded", "false");
     fireEvent.click(cluster);
     expect(cluster).toHaveAttribute("aria-expanded", "true");

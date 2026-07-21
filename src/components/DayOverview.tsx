@@ -206,7 +206,9 @@ function DayOverview({
   const points = useMemo(
     () =>
       pointGroups(
-        todayItems.filter(({ kind }) => kind !== "sleep" && kind !== "walk"),
+        todayItems.filter(
+          ({ kind }) => kind !== "sleep" && kind !== "wake" && kind !== "walk",
+        ),
       ),
     [todayItems],
   );
