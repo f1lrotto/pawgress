@@ -3359,18 +3359,22 @@ describe("DashboardPage activity", () => {
     expect(within(rows[1]).getByText("Pee")).toBeInTheDocument();
   });
 
-  it("keeps an accessible Play fallback while types load or are missing", () => {
+  it("keeps an accessible Enrichment fallback while types load or are missing", () => {
     convex.activityTypes = undefined;
     convex.recent = [playEvent({ note: "Rolling treat ball" })];
     const { rerender } = render(<DashboardPage dog={dog} />);
 
-    expect(screen.getByRole("button", { name: /Edit Play on/ })).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: /Edit Enrichment on/ }),
+    ).toBeEnabled();
     expect(screen.getByText("Rolling treat ball")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Log bathroom" })).toBeEnabled();
 
     convex.activityTypes = [];
     rerender(<DashboardPage dog={dog} />);
-    expect(screen.getByRole("button", { name: /Edit Play on/ })).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: /Edit Enrichment on/ }),
+    ).toBeEnabled();
     expect(screen.getByText("Rolling treat ball")).toBeInTheDocument();
   });
 
@@ -3520,6 +3524,7 @@ describe("DashboardPage timers", () => {
       name: "Log enrichment",
     });
     expect(training).toHaveTextContent("3 commands · 4 sessions");
+    expect(game).toHaveTextContent("Enrichment");
     expect(game).toHaveTextContent("3 activities · 4 logs");
 
     fireEvent.click(training);

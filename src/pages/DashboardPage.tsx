@@ -2331,20 +2331,23 @@ function QuickLogSection({
               {t("daily.more.hint")}
             </p>
           </div>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-2 min-[360px]:grid-cols-2 sm:grid-cols-3">
             <button
               type="button"
               disabled={isBusy}
               aria-label={t("quick.logAria", { event: t("events.treat") })}
               aria-describedby="quick-state-treat"
               aria-busy={pendingOperation === "treat"}
-              className="group grid min-h-16 min-w-0 grid-cols-[1.75rem_minmax(0,1fr)_1.375rem] items-center gap-x-2 gap-y-0.5 rounded-lg border border-border bg-card px-3 py-2 text-left transition-colors duration-150 hover:border-primary hover:bg-accent active:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:bg-muted disabled:opacity-60"
+              className="group grid min-h-16 min-w-0 grid-cols-[minmax(0,1fr)_1.375rem] items-center gap-x-2 gap-y-0.5 rounded-lg border border-border bg-card px-3 py-2 text-left transition-colors duration-150 hover:border-primary hover:bg-accent active:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:bg-muted disabled:opacity-60 sm:grid-cols-[1.75rem_minmax(0,1fr)_1.375rem]"
               onClick={() => log({ kind: "treat", label: t("events.treat") })}
             >
-              <span aria-hidden="true" className="text-center text-base">
+              <span
+                aria-hidden="true"
+                className="hidden text-center text-base sm:block"
+              >
                 🦴
               </span>
-              <strong className="min-w-0 text-sm leading-5">
+              <strong className="min-w-0 text-sm leading-5 [overflow-wrap:anywhere]">
                 {t("events.treat")}
               </strong>
               <span
@@ -2355,7 +2358,7 @@ function QuickLogSection({
               </span>
               <span
                 id="quick-state-treat"
-                className="col-span-3 block min-w-0 text-xs font-medium leading-4 text-muted-foreground sm:col-span-1 sm:col-start-2"
+                className="col-span-2 block min-w-0 text-xs font-medium leading-4 text-muted-foreground sm:col-span-1 sm:col-start-2"
               >
                 {summary.treat}
               </span>
@@ -2730,16 +2733,19 @@ function EnrichmentQuickLog({
         disabled={disabled}
         aria-label={t("enrichment.openAria")}
         aria-describedby="quick-state-enrichment"
-        className="group grid min-h-16 min-w-0 grid-cols-[1.75rem_minmax(0,1fr)_1.375rem] items-center gap-x-2 gap-y-0.5 rounded-lg border border-border bg-card px-3 py-2 text-left transition-colors duration-150 hover:border-primary hover:bg-accent active:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:bg-muted disabled:opacity-60"
+        className="group grid min-h-16 min-w-0 grid-cols-[minmax(0,1fr)_1.375rem] items-center gap-x-2 gap-y-0.5 rounded-lg border border-border bg-card px-3 py-2 text-left transition-colors duration-150 hover:border-primary hover:bg-accent active:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:bg-muted disabled:opacity-60 sm:grid-cols-[1.75rem_minmax(0,1fr)_1.375rem]"
         onClick={() => {
           setIsOpen(true);
           dialogRef.current?.showModal();
         }}
       >
-        <span aria-hidden="true" className="text-center text-base">
+        <span
+          aria-hidden="true"
+          className="hidden text-center text-base sm:block"
+        >
           🎾
         </span>
-        <strong className="min-w-0 text-sm leading-5">
+        <strong className="min-w-0 text-sm leading-5 [overflow-wrap:anywhere]">
           {t("daily.play.title")}
         </strong>
         <span
@@ -2750,7 +2756,7 @@ function EnrichmentQuickLog({
         </span>
         <span
           id="quick-state-enrichment"
-          className="col-span-3 block min-w-0 text-xs font-medium leading-4 text-muted-foreground sm:col-span-1 sm:col-start-2"
+          className="col-span-2 block min-w-0 text-xs font-medium leading-4 text-muted-foreground sm:col-span-1 sm:col-start-2"
         >
           <ActivityCountSummary items={today} kind="enrichment" />
         </span>
@@ -2985,16 +2991,19 @@ function TrainingQuickLog({
         disabled={disabled}
         aria-label={t("training.openAria")}
         aria-describedby="quick-state-training"
-        className="group grid min-h-16 min-w-0 grid-cols-[1.75rem_minmax(0,1fr)_1.375rem] items-center gap-x-2 gap-y-0.5 rounded-lg border border-border bg-card px-3 py-2 text-left transition-colors duration-150 hover:border-primary hover:bg-accent active:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:bg-muted disabled:opacity-60"
+        className="group grid min-h-16 min-w-0 grid-cols-[minmax(0,1fr)_1.375rem] items-center gap-x-2 gap-y-0.5 rounded-lg border border-border bg-card px-3 py-2 text-left transition-colors duration-150 hover:border-primary hover:bg-accent active:bg-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:bg-muted disabled:opacity-60 sm:grid-cols-[1.75rem_minmax(0,1fr)_1.375rem]"
         onClick={() => {
           setIsOpen(true);
           dialogRef.current?.showModal();
         }}
       >
-        <span aria-hidden="true" className="text-center text-base">
+        <span
+          aria-hidden="true"
+          className="hidden text-center text-base sm:block"
+        >
           ⭐
         </span>
-        <strong className="min-w-0 text-sm leading-5">
+        <strong className="min-w-0 text-sm leading-5 [overflow-wrap:anywhere]">
           {t("training.label")}
         </strong>
         <span
@@ -3005,7 +3014,7 @@ function TrainingQuickLog({
         </span>
         <span
           id="quick-state-training"
-          className="col-span-3 block min-w-0 text-xs font-medium leading-4 text-muted-foreground sm:col-span-1 sm:col-start-2"
+          className="col-span-2 block min-w-0 text-xs font-medium leading-4 text-muted-foreground sm:col-span-1 sm:col-start-2"
         >
           <ActivityCountSummary items={today} kind="training" />
         </span>

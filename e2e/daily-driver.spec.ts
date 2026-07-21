@@ -336,7 +336,7 @@ test("a household can log and manage live activity", async ({
   await expect(cafeRow).toHaveCount(0);
   await expect(
     page
-      .getByRole("form", { name: "Log another play time" })
+      .getByRole("form", { name: "Log another activity" })
       .getByRole("option", { name: "Cafe visit" }),
   ).toHaveCount(0);
   await expect(cafeHistory).toContainText("Cafe visit", { timeout: 1_000 });

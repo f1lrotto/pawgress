@@ -115,37 +115,6 @@ const groupTrainingSessions = (sessions: TrainingSession[]) =>
     }, new Map<string, TrainingGroup>()),
   ).map(([, group]) => group);
 
-const summarizeDay = (items: TimelineItem[]) => {
-  const events = items
-    .flatMap((item) => (item.type === "event" ? [item.event] : []))
-    .sort((left, right) => left.at - right.at);
-  let sleepStartedAt: number | null = null;
-  let restMs = 0;
-  let walkMs = 0;
-
-  for (const event of events) {
-    if (event.kind === "sleep") {
-      sleepStartedAt = event.at;
-    } else if (
-      event.kind === "wake" &&
-      sleepStartedAt !== null &&
-      event.at > sleepStartedAt
-    ) {
-      restMs += event.at - sleepStartedAt;
-      sleepStartedAt = null;
-    }
-    if (
-      event.kind === "walk" &&
-      event.endedAt !== undefined &&
-      event.endedAt > event.at
-    ) {
-      walkMs += event.endedAt - event.at;
-    }
-  }
-
-  return { activityCount: items.length, restMs, walkMs };
-};
-
 function TimelineRow({
   activityTypesById,
   dog,
@@ -594,43 +563,13 @@ function TimelinePage({ dog }: { dog: TimelineDog }) {
                 aria-labelledby={`timeline-day-${day.date}`}
                 className="mt-5 first:mt-0"
               >
-                <div className="sticky top-0 z-[var(--z-sticky)] flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 border-y border-border bg-secondary px-3 py-3 sm:px-4">
+                <div className="sticky top-0 z-[var(--z-sticky)] border-y border-border bg-secondary px-3 py-3 sm:px-4">
                   <h3
                     id={`timeline-day-${day.date}`}
                     className="text-base font-semibold leading-6"
                   >
                     <time dateTime={day.date}>{day.label}</time>
                   </h3>
-                  {(() => {
-                    const summary = summarizeDay(day.items);
-                    const clauses = [
-                      summary.restMs > 0
-                        ? t("daySummary.rest", {
-                            duration: formatElapsed(summary.restMs, locale),
-                          })
-                        : null,
-                      summary.walkMs > 0
-                        ? t("daySummary.walk", {
-                            duration: formatElapsed(summary.walkMs, locale),
-                          })
-                        : null,
-                      t("daySummary.activities", {
-                        count: summary.activityCount,
-                        formattedCount: formatNumber(
-                          summary.activityCount,
-                          locale,
-                        ),
-                      }),
-                    ].filter(Boolean);
-                    return (
-                      <p
-                        data-day-summary=""
-                        className="break-words text-sm font-medium leading-5 text-muted-foreground [overflow-wrap:anywhere]"
-                      >
-                        {clauses.join(" · ")}
-                      </p>
-                    );
-                  })()}
                 </div>
                 <ol>
                   {day.items.map((item) =>

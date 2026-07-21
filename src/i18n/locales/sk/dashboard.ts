@@ -11,7 +11,7 @@ const dashboard = {
     wake: "Prebudenie",
     sleep: "Zaspatie",
     note: "Poznámka",
-    play: "Hra",
+    play: "Obohatenie",
     walk: "Prechádzka",
   },
   peePlace: {
@@ -136,8 +136,8 @@ const dashboard = {
       sessions_other: "{{formattedCount}} tréningov",
     },
     play: {
-      title: "Hra",
-      log: "Zaznamenať hru",
+      title: "Obohatenie",
+      log: "Zaznamenať obohatenie",
     },
   },
   waterToday: {

@@ -192,13 +192,13 @@ describe("EnrichmentPage", () => {
     fireEvent.change(screen.getByLabelText("Activity"), {
       target: { value: tugId },
     });
-    fireEvent.change(screen.getByLabelText("When did play start?"), {
+    fireEvent.change(screen.getByLabelText("When did the activity start?"), {
       target: { value: "2026-07-09T10:30" },
     });
-    fireEvent.change(screen.getByLabelText("Play note (optional)"), {
+    fireEvent.change(screen.getByLabelText("Activity note (optional)"), {
       target: { value: "  Calm focus  " },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Log this play" }));
+    fireEvent.click(screen.getByRole("button", { name: "Log this activity" }));
 
     await waitFor(() =>
       expect(convex.logPlay).toHaveBeenLastCalledWith({
@@ -336,29 +336,29 @@ describe("EnrichmentPage", () => {
       target: { value: tugId },
     });
 
-    fireEvent.click(screen.getByRole("button", { name: "Log this play" }));
-    expect(screen.getByLabelText("When did play start?")).toHaveFocus();
+    fireEvent.click(screen.getByRole("button", { name: "Log this activity" }));
+    expect(screen.getByLabelText("When did the activity start?")).toHaveFocus();
     expect(
       screen.getByText("Choose a valid date and time."),
     ).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("When did play start?"), {
+    fireEvent.change(screen.getByLabelText("When did the activity start?"), {
       target: { value: "2026-07-09T12:06" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Log this play" }));
-    expect(screen.getByLabelText("When did play start?")).toHaveFocus();
+    fireEvent.click(screen.getByRole("button", { name: "Log this activity" }));
+    expect(screen.getByLabelText("When did the activity start?")).toHaveFocus();
     expect(
       screen.getByText("Choose a time no more than 5 minutes in the future."),
     ).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("When did play start?"), {
+    fireEvent.change(screen.getByLabelText("When did the activity start?"), {
       target: { value: "2026-07-09T10:30" },
     });
-    fireEvent.change(screen.getByLabelText("Play note (optional)"), {
+    fireEvent.change(screen.getByLabelText("Activity note (optional)"), {
       target: { value: "x".repeat(501) },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Log this play" }));
-    expect(screen.getByLabelText("Play note (optional)")).toHaveFocus();
+    fireEvent.click(screen.getByRole("button", { name: "Log this activity" }));
+    expect(screen.getByLabelText("Activity note (optional)")).toHaveFocus();
     expect(
       screen.getByText("Use 500 characters or fewer."),
     ).toBeInTheDocument();
@@ -376,10 +376,10 @@ describe("EnrichmentPage", () => {
     fireEvent.change(screen.getByLabelText("Activity"), {
       target: { value: tugId },
     });
-    fireEvent.change(screen.getByLabelText("When did play start?"), {
+    fireEvent.change(screen.getByLabelText("When did the activity start?"), {
       target: { value: "2026-07-09T12:00" },
     });
-    fireEvent.change(screen.getByLabelText("Play note (optional)"), {
+    fireEvent.change(screen.getByLabelText("Activity note (optional)"), {
       target: { value: "Kept the rope low" },
     });
 
@@ -394,14 +394,14 @@ describe("EnrichmentPage", () => {
     );
 
     expect(screen.getByLabelText("Activity")).toHaveValue("");
-    expect(screen.getByLabelText("When did play start?")).toHaveValue(
+    expect(screen.getByLabelText("When did the activity start?")).toHaveValue(
       "2026-07-09T12:00",
     );
-    expect(screen.getByLabelText("Play note (optional)")).toHaveValue(
+    expect(screen.getByLabelText("Activity note (optional)")).toHaveValue(
       "Kept the rope low",
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Log this play" }));
+    fireEvent.click(screen.getByRole("button", { name: "Log this activity" }));
     expect(screen.getByText("Choose an active activity.")).toBeInTheDocument();
     expect(screen.getByLabelText("Activity")).toHaveFocus();
     expect(convex.logPlay).not.toHaveBeenCalled();
@@ -409,7 +409,7 @@ describe("EnrichmentPage", () => {
     fireEvent.change(screen.getByLabelText("Activity"), {
       target: { value: fetchId },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Log this play" }));
+    fireEvent.click(screen.getByRole("button", { name: "Log this activity" }));
 
     await waitFor(() =>
       expect(convex.logPlay).toHaveBeenCalledWith({

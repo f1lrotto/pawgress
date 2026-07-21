@@ -142,7 +142,9 @@ describe("DayOverview", () => {
       item("water", "water", "2026-07-20T12:08:00Z", {
         label: "Drank water",
       }),
-      item("play", "play", "2026-07-20T14:22:00Z", { label: "Play" }),
+      item("play", "play", "2026-07-20T14:22:00Z", {
+        label: "Enrichment",
+      }),
     ];
     const view = renderOverview(items);
     const scroller =

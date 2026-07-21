@@ -6,13 +6,6 @@ const timeline = {
   amount: "Množstvo: {{amount}}",
   boundary: "Dni sa riadia časovým pásmom {{timezone}}.",
   clearFilters: "Zrušiť filtre",
-  daySummary: {
-    activities_one: "{{formattedCount}} aktivita",
-    activities_few: "{{formattedCount}} aktivity",
-    activities_other: "{{formattedCount}} aktivít",
-    rest: "{{duration}} odpočinku",
-    walk: "{{duration}} prechádzky",
-  },
   duration: "Trvanie: {{duration}}",
   edit: "Upraviť",
   editAria: "Upraviť {{event}} o {{time}}",
@@ -22,14 +15,14 @@ const timeline = {
   filter: "Filtrovať udalosti",
   filteredEmpty: "Žiadne záznamy nezodpovedajú týmto filtrom.",
   intro:
-    "Jedlá, odpočinok, prechádzky, tréningy, hry a poznámky pre {{name}} nájdete v jednej súvislej histórii.",
+    "Jedlá, odpočinok, prechádzky, tréningy, obohatenie a poznámky pre {{name}} nájdete v jednej súvislej histórii.",
   invalid:
     "Časovú os sa nepodarilo načítať. Skontrolujte časové pásmo pre {{name}}.",
   kinds: {
     meal: "Jedlo",
     note: "Poznámka",
     pee: "Cikanie",
-    play: "Hra",
+    play: "Obohatenie",
     poop: "Kakanie",
     sleep: "Zaspatie",
     training: "Tréning",

@@ -301,7 +301,7 @@ describe("TimelinePage", () => {
     ).toBeInTheDocument();
   });
 
-  it("summarizes completed rest, walks, and grouped daily activity", () => {
+  it("keeps day headers focused on the date", () => {
     convex.eventResults = [
       event({
         _id: "unpaired-sleep-id",
@@ -337,9 +337,13 @@ describe("TimelinePage", () => {
     ];
     renderPage();
 
-    expect(document.querySelector("[data-day-summary]")).toHaveTextContent(
-      "2h rest · 30m walk · 5 activities",
+    const dayHeading = screen.getByRole("heading", {
+      name: "Friday, July 10, 2026",
+    });
+    expect(dayHeading.parentElement).toHaveTextContent(
+      /^Friday, July 10, 2026$/,
     );
+    expect(document.querySelector("[data-day-summary]")).toBeNull();
     expect(screen.getAllByRole("listitem")).toHaveLength(5);
   });
 
@@ -470,7 +474,7 @@ describe("TimelinePage", () => {
     expect(within(rows[1]).getByText("23:45")).toBeVisible();
   });
 
-  it("renders complete read-only row metadata and archived Play names", () => {
+  it("renders complete read-only row metadata and archived enrichment names", () => {
     const activityName = Array(4)
       .fill("Old garden game with an exceptionally long activity name")
       .join(" ");
@@ -529,7 +533,7 @@ describe("TimelinePage", () => {
       "title",
       "Linked walk walk-id",
     );
-    expect(within(rows[3]).getByText("Play")).toBeVisible();
+    expect(within(rows[3]).getByText("Enrichment")).toBeVisible();
   });
 
   it("groups training sessions in chronology and filters to training", () => {
@@ -608,7 +612,7 @@ describe("TimelinePage", () => {
     convex.eventResults = [event({ kind: "play", activityTypeId })];
     renderPage();
 
-    expect(screen.getByRole("listitem")).toHaveTextContent("Play");
+    expect(screen.getByRole("listitem")).toHaveTextContent("Enrichment");
   });
 
   it("renders Slovak filters, metadata, and day dividers", async () => {
@@ -633,9 +637,12 @@ describe("TimelinePage", () => {
       "title",
       "Prepojená prechádzka walk-id",
     );
-    expect(screen.getByText("piatok 10. júla 2026")).toBeVisible();
-    expect(document.querySelector("[data-day-summary]")).toHaveTextContent(
-      "1 aktivita",
+    const dayHeading = screen.getByRole("heading", {
+      name: "piatok 10. júla 2026",
+    });
+    expect(dayHeading.parentElement).toHaveTextContent(
+      /^piatok 10\. júla 2026$/,
     );
+    expect(document.querySelector("[data-day-summary]")).toBeNull();
   });
 });

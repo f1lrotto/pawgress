@@ -8,7 +8,7 @@ const dashboard = {
     wake: "Woke up",
     sleep: "Fell asleep",
     note: "Note",
-    play: "Play",
+    play: "Enrichment",
     walk: "Walk",
   },
   peePlace: {
@@ -132,8 +132,8 @@ const dashboard = {
       sessions_other: "{{formattedCount}} sessions",
     },
     play: {
-      title: "Play",
-      log: "Log play",
+      title: "Enrichment",
+      log: "Log enrichment",
     },
   },
   waterToday: {
