@@ -20,6 +20,7 @@ const convex = vi.hoisted(() => ({
   activeWalk: null as unknown,
   activityTypes: [] as unknown[] | undefined,
   agenda: null as unknown,
+  completeWalk: vi.fn(),
   diaryUpdate: vi.fn(),
   createWithPotty: vi.fn(),
   enrichmentDay: [] as unknown[] | undefined,
@@ -34,6 +35,7 @@ const convex = vi.hoisted(() => ({
     walk: null,
   } as Record<string, unknown> | undefined,
   log: vi.fn(),
+  logRestInterval: vi.fn(),
   playsLog: vi.fn(),
   pottyLog: vi.fn(),
   queryCalls: [] as Array<{ name: string; args: unknown }>,
@@ -54,9 +56,11 @@ vi.mock("convex/react", () => ({
   useMutation: (reference: unknown) => {
     const name = getFunctionName(reference as never);
     if (name === "events:logQuick") return convex.log;
+    if (name === "events:logRestInterval") return convex.logRestInterval;
     if (name === "activityTypes:logPlays") return convex.playsLog;
     if (name === "walks:logPotty") return convex.pottyLog;
     if (name === "walks:createWithPotty") return convex.createWithPotty;
+    if (name === "walks:createComplete") return convex.completeWalk;
     if (name === "walks:undoReconstruction") return convex.undoReconstruction;
     if (name === "walks:updateDiary") return convex.diaryUpdate;
     if (name === "walks:start") return convex.walkStart;
@@ -170,6 +174,11 @@ beforeEach(() => {
   convex.activeWalk = null;
   convex.activityTypes = [];
   convex.agenda = null;
+  convex.completeWalk.mockReset();
+  convex.completeWalk.mockResolvedValue({
+    eventIds: ["pee-id", "poop-id"],
+    walkId: "walk-id",
+  });
   convex.diaryUpdate.mockReset();
   convex.diaryUpdate.mockResolvedValue(null);
   convex.createWithPotty.mockReset();
@@ -190,6 +199,11 @@ beforeEach(() => {
   convex.enrichmentDay = [];
   convex.log.mockReset();
   convex.log.mockResolvedValue("event-id");
+  convex.logRestInterval.mockReset();
+  convex.logRestInterval.mockResolvedValue({
+    sleepId: "sleep-id",
+    wakeId: "wake-id",
+  });
   convex.playsLog.mockReset();
   convex.playsLog.mockResolvedValue(["play-id"]);
   convex.pottyLog.mockReset();
@@ -1302,6 +1316,136 @@ describe("DashboardPage sleep controls", () => {
     rerender(<DashboardPage dog={dog} />);
     expect(within(timer).getByText("10m")).toBeInTheDocument();
     expect(within(timer).getByText("Asleep")).toBeInTheDocument();
+  });
+});
+
+describe("DashboardPage complete event backfill", () => {
+  it("offers whole sleep and walk actions only in Earlier mode", () => {
+    render(<DashboardPage dog={dog} />);
+
+    expect(screen.queryByText("Complete events")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Earlier" }));
+
+    expect(screen.getByText("Complete events")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Sleep session/ })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /Complete walk/ })).toBeEnabled();
+  });
+
+  it("saves a complete sleep interval without bathroom controls", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-07-09T12:00:00Z"));
+    render(<DashboardPage dog={dog} />);
+    fireEvent.click(screen.getByRole("button", { name: "Earlier" }));
+    fireEvent.click(screen.getByRole("button", { name: /Sleep session/ }));
+
+    const form = screen.getByRole("form", { name: "Complete sleep session" });
+    expect(within(form).getByLabelText("Started")).toHaveValue(
+      "2026-07-09T11:00",
+    );
+    expect(within(form).getByLabelText("Finished")).toHaveValue(
+      "2026-07-09T12:00",
+    );
+    expect(
+      within(form).queryByText("Bathroom during this walk"),
+    ).not.toBeInTheDocument();
+
+    fireEvent.change(within(form).getByLabelText("Started"), {
+      target: { value: "2026-07-09T08:15" },
+    });
+    fireEvent.change(within(form).getByLabelText("Finished"), {
+      target: { value: "2026-07-09T09:45" },
+    });
+    fireEvent.click(
+      within(form).getByRole("button", { name: "Save sleep session" }),
+    );
+
+    await waitFor(() =>
+      expect(convex.logRestInterval).toHaveBeenCalledWith({
+        dogId,
+        startedAt: Date.parse("2026-07-09T08:15:00Z"),
+        endedAt: Date.parse("2026-07-09T09:45:00Z"),
+      }),
+    );
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Sleep session logged for Milo.",
+    );
+    expect(
+      screen.queryByRole("form", { name: "Complete sleep session" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("builds and saves timed bathroom events on a complete walk", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-07-09T12:00:00Z"));
+    render(<DashboardPage dog={dog} />);
+    fireEvent.click(screen.getByRole("button", { name: "Earlier" }));
+    fireEvent.click(screen.getByRole("button", { name: /Complete walk/ }));
+
+    const form = screen.getByRole("form", {
+      name: "Complete walk with bathroom timeline",
+    });
+    fireEvent.change(within(form).getByLabelText("Started"), {
+      target: { value: "2026-07-09T10:00" },
+    });
+    fireEvent.change(within(form).getByLabelText("Finished"), {
+      target: { value: "2026-07-09T10:30" },
+    });
+    fireEvent.click(
+      within(form).getByRole("button", { name: "Add pee outside" }),
+    );
+    const range = within(form).getByLabelText("Move selected event");
+    expect(range).toHaveValue("10");
+    fireEvent.change(range, { target: { value: "7" } });
+    fireEvent.click(within(form).getByRole("button", { name: "Add poop" }));
+    expect(range).toHaveValue("20");
+    fireEvent.change(range, { target: { value: "19" } });
+    fireEvent.click(
+      within(form).getByRole("button", { name: "Save complete walk" }),
+    );
+
+    await waitFor(() =>
+      expect(convex.completeWalk).toHaveBeenCalledWith({
+        dogId,
+        walkStartedAt: Date.parse("2026-07-09T10:00:00Z"),
+        walkEndedAt: Date.parse("2026-07-09T10:30:00Z"),
+        pottyEvents: [
+          {
+            kind: "pee",
+            at: Date.parse("2026-07-09T10:07:00Z"),
+          },
+          {
+            kind: "poop",
+            at: Date.parse("2026-07-09T10:19:00Z"),
+          },
+        ],
+      }),
+    );
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Complete walk logged for Milo.",
+    );
+  });
+
+  it("keeps an invalid interval in the form and focuses the finish time", () => {
+    vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-07-09T12:00:00Z"));
+    render(<DashboardPage dog={dog} />);
+    fireEvent.click(screen.getByRole("button", { name: "Earlier" }));
+    fireEvent.click(screen.getByRole("button", { name: /Complete walk/ }));
+    const form = screen.getByRole("form", {
+      name: "Complete walk with bathroom timeline",
+    });
+    fireEvent.change(within(form).getByLabelText("Started"), {
+      target: { value: "2026-07-09T11:00" },
+    });
+    fireEvent.change(within(form).getByLabelText("Finished"), {
+      target: { value: "2026-07-09T10:59" },
+    });
+    fireEvent.click(
+      within(form).getByRole("button", { name: "Save complete walk" }),
+    );
+
+    expect(
+      within(form).getByText("Choose a finish time after the start time."),
+    ).toBeInTheDocument();
+    expect(within(form).getByLabelText("Finished")).toHaveFocus();
+    expect(convex.completeWalk).not.toHaveBeenCalled();
   });
 });
 

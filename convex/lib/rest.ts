@@ -75,6 +75,22 @@ export const assertRestTransition = async (
   }
 };
 
+export const assertRestInterval = async (
+  ctx: MutationCtx,
+  dogId: Id<"dogs">,
+  startedAt: number,
+  endedAt: number,
+) => {
+  const { before, after } = await getRestNeighbors(ctx, dogId, startedAt);
+  if (
+    before?.kind === "sleep" ||
+    (after !== null && after.at <= endedAt) ||
+    after?.kind === "wake"
+  ) {
+    throw new ConvexError("INVALID_REST_TRANSITION");
+  }
+};
+
 export const assertRestMove = async (
   ctx: MutationCtx,
   event: Doc<"events">,

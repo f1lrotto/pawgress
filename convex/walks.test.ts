@@ -5,6 +5,7 @@ import { expect, test } from "vitest";
 
 import { api } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
+import { maxWalkEvents } from "./lib/events";
 import schema from "./schema";
 
 const modules = import.meta.glob("./**/*.*s");
@@ -392,6 +393,86 @@ test("creates active and completed walks with their potty atomically", async () 
   expect(await t.run(({ db }) => db.get("events", completed.eventId))).toEqual(
     expect.objectContaining({ kind: "poop", walkId: completed.walkId }),
   );
+});
+
+test("creates a complete walk with multiple timed potty events", async () => {
+  const { dogId, member, memberId, t } = await setup();
+  const endedAt = walkStart + 30 * 60_000;
+  const peeAt = walkStart + 7 * 60_000;
+  const poopAt = walkStart + 19 * 60_000;
+
+  const created = await member.mutation(api.walks.createComplete, {
+    dogId,
+    walkStartedAt: walkStart,
+    walkEndedAt: endedAt,
+    pottyEvents: [
+      { kind: "poop", at: poopAt },
+      { kind: "pee", at: peeAt },
+    ],
+  });
+  const [walk, pottyEvents] = await t.run(async ({ db }) =>
+    Promise.all([
+      db.get("events", created.walkId),
+      db
+        .query("events")
+        .withIndex("by_walk_at", (q) => q.eq("walkId", created.walkId))
+        .collect(),
+    ]),
+  );
+
+  expect(walk).toEqual(
+    expect.objectContaining({
+      at: walkStart,
+      endedAt,
+      kind: "walk",
+      userId: memberId,
+    }),
+  );
+  expect(created.eventIds).toHaveLength(2);
+  expect(pottyEvents).toEqual([
+    expect.objectContaining({
+      at: peeAt,
+      kind: "pee",
+      peePlace: "outside",
+    }),
+    expect.objectContaining({ at: poopAt, kind: "poop" }),
+  ]);
+});
+
+test("rejects invalid complete walks without partial rows", async () => {
+  const { dogId, owner, t } = await setup();
+  const invalid = [
+    {
+      walkStartedAt: walkStart,
+      walkEndedAt: walkStart,
+      pottyEvents: [],
+      error: "INVALID_WALK_INTERVAL",
+    },
+    {
+      walkStartedAt: walkStart,
+      walkEndedAt: walkStart + 20 * 60_000,
+      pottyEvents: [{ kind: "pee" as const, at: walkStart - 1 }],
+      error: "INVALID_WALK_TIMESTAMP",
+    },
+  ];
+
+  for (const { error, ...args } of invalid) {
+    await expect(
+      owner.mutation(api.walks.createComplete, { dogId, ...args }),
+    ).rejects.toThrow(error);
+  }
+  await expect(
+    owner.mutation(api.walks.createComplete, {
+      dogId,
+      walkStartedAt: walkStart,
+      walkEndedAt: walkStart + 20 * 60_000,
+      pottyEvents: Array.from({ length: maxWalkEvents + 1 }, (_, index) => ({
+        kind: "poop" as const,
+        at: walkStart + index,
+      })),
+    }),
+  ).rejects.toThrow("WALK_EVENT_LIMIT");
+  expect(await t.run(({ db }) => db.query("events").collect())).toEqual([]);
 });
 
 test("rejects invalid reconstructed potty intervals without partial rows", async () => {

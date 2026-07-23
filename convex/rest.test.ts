@@ -126,6 +126,111 @@ test("backdated rest transitions must fit both chronological neighbors", async (
   }
 });
 
+test("logs a complete sleep interval atomically", async () => {
+  const { dogId, member, owner } = await setup();
+  await owner.mutation(api.events.logQuick, {
+    dogId,
+    kind: "wake",
+    at: baseAt,
+  });
+
+  const created = await member.mutation(api.events.logRestInterval, {
+    dogId,
+    startedAt: baseAt + 100,
+    endedAt: baseAt + 200,
+  });
+  const recent = await owner.query(api.events.listRecent, { dogId, limit: 3 });
+
+  expect(created).toEqual({
+    sleepId: expect.any(String),
+    wakeId: expect.any(String),
+  });
+  expect(recent.map(({ kind }) => kind)).toEqual(["wake", "sleep", "wake"]);
+  expect(recent[0]).toEqual(
+    expect.objectContaining({ _id: created.wakeId, at: baseAt + 200 }),
+  );
+  expect(recent[1]).toEqual(
+    expect.objectContaining({ _id: created.sleepId, at: baseAt + 100 }),
+  );
+});
+
+test("logs complete sleep before and after an existing interval", async () => {
+  const { dogId, owner } = await setup();
+  await owner.mutation(api.events.logRestInterval, {
+    dogId,
+    startedAt: baseAt + 300,
+    endedAt: baseAt + 400,
+  });
+
+  await expect(
+    owner.mutation(api.events.logRestInterval, {
+      dogId,
+      startedAt: baseAt + 100,
+      endedAt: baseAt + 200,
+    }),
+  ).resolves.toEqual({
+    sleepId: expect.any(String),
+    wakeId: expect.any(String),
+  });
+  await expect(
+    owner.mutation(api.events.logRestInterval, {
+      dogId,
+      startedAt: baseAt + 500,
+      endedAt: baseAt + 600,
+    }),
+  ).resolves.toEqual({
+    sleepId: expect.any(String),
+    wakeId: expect.any(String),
+  });
+
+  const recent = await owner.query(api.events.listRecent, { dogId, limit: 6 });
+  expect(recent.map(({ kind }) => kind)).toEqual([
+    "wake",
+    "sleep",
+    "wake",
+    "sleep",
+    "wake",
+    "sleep",
+  ]);
+});
+
+test("rejects invalid complete sleep intervals without partial rows", async () => {
+  const { dogId, owner } = await setup();
+  await owner.mutation(api.events.logQuick, {
+    dogId,
+    kind: "wake",
+    at: baseAt,
+  });
+  await owner.mutation(api.events.logQuick, {
+    dogId,
+    kind: "sleep",
+    at: baseAt + 200,
+  });
+  await owner.mutation(api.events.logQuick, {
+    dogId,
+    kind: "wake",
+    at: baseAt + 300,
+  });
+
+  await expect(
+    owner.mutation(api.events.logRestInterval, {
+      dogId,
+      startedAt: baseAt + 100,
+      endedAt: baseAt + 250,
+    }),
+  ).rejects.toThrow("INVALID_REST_TRANSITION");
+  await expect(
+    owner.mutation(api.events.logRestInterval, {
+      dogId,
+      startedAt: baseAt + 400,
+      endedAt: baseAt + 400,
+    }),
+  ).rejects.toThrow("INVALID_REST_INTERVAL");
+
+  const recent = await owner.query(api.events.listRecent, { dogId, limit: 10 });
+  expect(recent.map(({ kind }) => kind)).toEqual(["wake", "sleep", "wake"]);
+});
+
 test("concurrent household transitions preserve a single next state", async () => {
   const { dogId, member, owner } = await setup();
   await owner.mutation(api.events.logQuick, {

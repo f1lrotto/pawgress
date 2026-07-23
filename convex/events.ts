@@ -14,6 +14,7 @@ import {
 } from "./lib/events";
 import {
   assertRestDeletion,
+  assertRestInterval,
   assertRestMove,
   assertRestTransition,
   isRestKind,
@@ -86,6 +87,40 @@ export const logQuick = dogMutation({
       amount: amount === undefined ? undefined : normalizeAmount(kind, amount),
       peePlace: validatePeePlace(kind, peePlace),
     });
+  },
+});
+
+export const logRestInterval = dogMutation({
+  args: {
+    startedAt: v.number(),
+    endedAt: v.number(),
+  },
+  returns: v.object({
+    sleepId: v.id("events"),
+    wakeId: v.id("events"),
+  }),
+  handler: async (ctx, { dogId, startedAt, endedAt }) => {
+    const dog = await requireDog(ctx, dogId);
+    const sleepAt = validateDogTimestamp(startedAt, dog);
+    const wakeAt = validateDogTimestamp(endedAt, dog);
+    if (wakeAt <= sleepAt) throw new ConvexError("INVALID_REST_INTERVAL");
+
+    await assertRestInterval(ctx, dogId, sleepAt, wakeAt);
+    const [sleepId, wakeId] = await Promise.all([
+      ctx.db.insert("events", {
+        dogId,
+        userId: ctx.userId,
+        kind: "sleep",
+        at: sleepAt,
+      }),
+      ctx.db.insert("events", {
+        dogId,
+        userId: ctx.userId,
+        kind: "wake",
+        at: wakeAt,
+      }),
+    ]);
+    return { sleepId, wakeId };
   },
 });
 

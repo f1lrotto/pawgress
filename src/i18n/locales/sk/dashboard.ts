@@ -267,6 +267,47 @@ const dashboard = {
     saveError:
       "Záznam sa nepodarilo uložiť. Nič sa nestratilo, skúste to znova.",
   },
+  completeEvent: {
+    title: "Celé udalosti",
+    help: "Pridajte začiatok aj koniec v jednom kroku.",
+    sleepAction: "Celý spánok",
+    sleepHint: "Zaspatie → zobudenie",
+    walkAction: "Celá prechádzka",
+    walkHint: "Začiatok → koniec",
+    sleepAria: "Zaznamenať celý spánok",
+    walkAria: "Celá prechádzka s časovou osou potrieb",
+    sleepTitle: "Celý spánok",
+    walkTitle: "Celá prechádzka",
+    sleepDescription: "Uložte, kedy {{dogName}} zaspal a zobudil sa.",
+    walkDescription: "Pridajte celý interval na časovú os {{dogName}}.",
+    startedAt: "Začiatok",
+    endedAt: "Koniec",
+    duration: "Trvanie · {{duration}}",
+    endAfterStart: "Vyberte čas konca, ktorý je po začiatku.",
+    bathroomTitle: "Potreby počas prechádzky",
+    bathroomHelp:
+      "Voliteľné. Pridajte cikanie alebo kakanie a umiestnite ich na správny čas.",
+    timelineAria: "Časová os potrieb",
+    timelineUnavailable:
+      "Pre použitie časovej osi vyberte platný začiatok a koniec.",
+    emptyBathroom: "Neboli pridané žiadne potreby.",
+    eventsAria: "Potreby počas tejto prechádzky",
+    addPee: "Pridať cikanie vonku",
+    addPoop: "Pridať kakanie",
+    moveSelected: "Posunúť vybranú udalosť",
+    markerSummary:
+      "{{event}} · {{offset}} min od začiatku prechádzky · {{time}}",
+    remove: "Odstrániť",
+    saveSleep: "Uložiť celý spánok",
+    saveWalk: "Uložiť celú prechádzku",
+    restConflict:
+      "Tento interval je v rozpore s existujúcim priebehom spánku. Vyberte iné časy.",
+    walkOverlap: "Táto prechádzka sa prekrýva s inou. Vyberte iné časy.",
+    eventLimit: "Prechádzka môže obsahovať najviac 100 záznamov potrieb.",
+    saveError:
+      "Celú udalosť sa nepodarilo uložiť. Nič sa nestratilo, skúste to znova.",
+    logged: "Udalosť {{event}} bola zaznamenaná pre {{dogName}}.",
+  },
   quick: {
     kicker: "Jedným ťuknutím",
     title: "Zaznamenať aktivitu",

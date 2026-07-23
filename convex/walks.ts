@@ -16,6 +16,10 @@ import {
 import { dogMutation, dogQuery } from "./lib/functions";
 
 const pottyKind = v.union(v.literal("pee"), v.literal("poop"));
+const completePottyEvent = v.object({
+  kind: pottyKind,
+  at: v.number(),
+});
 
 const findActiveWalk = (ctx: QueryCtx | MutationCtx, dogId: Id<"dogs">) =>
   ctx.db
@@ -196,6 +200,58 @@ export const createWithPotty = dogMutation({
       peePlace,
     });
     return { eventId, walkId };
+  },
+});
+
+export const createComplete = dogMutation({
+  args: {
+    walkStartedAt: v.number(),
+    walkEndedAt: v.number(),
+    pottyEvents: v.array(completePottyEvent),
+  },
+  returns: v.object({
+    eventIds: v.array(v.id("events")),
+    walkId: v.id("events"),
+  }),
+  handler: async (ctx, { dogId, pottyEvents, walkStartedAt, walkEndedAt }) => {
+    const dog = await requireDog(ctx, dogId);
+    const startedAt = validateDogTimestamp(walkStartedAt, dog);
+    const endedAt = validateDogTimestamp(walkEndedAt, dog);
+    if (endedAt <= startedAt) throw new ConvexError("INVALID_WALK_INTERVAL");
+    if (pottyEvents.length > maxWalkEvents) {
+      throw new ConvexError("WALK_EVENT_LIMIT");
+    }
+    const events = pottyEvents
+      .map(({ at, kind }) => ({
+        at: validateDogTimestamp(at, dog),
+        kind,
+      }))
+      .sort((a, b) => a.at - b.at);
+    if (events.some(({ at }) => at < startedAt || at > endedAt)) {
+      throw new ConvexError("INVALID_WALK_TIMESTAMP");
+    }
+    await assertWalkInterval(ctx, dogId, startedAt, endedAt);
+
+    const walkId = await ctx.db.insert("events", {
+      dogId,
+      userId: ctx.userId,
+      kind: "walk",
+      at: startedAt,
+      endedAt,
+    });
+    const eventIds = await Promise.all(
+      events.map(({ at, kind }) =>
+        ctx.db.insert("events", {
+          dogId,
+          userId: ctx.userId,
+          kind,
+          at,
+          walkId,
+          ...(kind === "pee" ? { peePlace: "outside" as const } : {}),
+        }),
+      ),
+    );
+    return { eventIds, walkId };
   },
 });
 

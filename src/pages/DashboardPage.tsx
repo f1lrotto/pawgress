@@ -121,6 +121,22 @@ type DiaryState = { error: string; isOpen: boolean; note: string };
 type EarlierAction = { kind: QuickKind; label: string; peePlace?: PeePlace };
 type WalkPromptAction = EarlierAction & { at: number };
 type WalkPrompt = { action: WalkPromptAction; step: "question" | "start" };
+type CompleteEventKind = "sleep" | "walk";
+type WalkPottyMarker = {
+  id: number;
+  kind: "pee" | "poop";
+  offsetMinutes: number;
+};
+type CompleteEventState = {
+  endedAt: string;
+  errors: { endedAt: string; startedAt: string };
+  formError: string;
+  isPending: boolean;
+  kind: CompleteEventKind | null;
+  markers: WalkPottyMarker[];
+  selectedMarkerId: number | null;
+  startedAt: string;
+};
 type RecentState = {
   confirmDeleteId: Id<"events"> | null;
   editId: Id<"events"> | null;
@@ -189,9 +205,23 @@ const initialBackdateState: BackdateState = {
   walkDuration: null,
   walkOffset: null,
 };
+const initialCompleteEventState: CompleteEventState = {
+  endedAt: "",
+  errors: { endedAt: "", startedAt: "" },
+  formError: "",
+  isPending: false,
+  kind: null,
+  markers: [],
+  selectedMarkerId: null,
+  startedAt: "",
+};
 const mergeBackdateState = (
   state: BackdateState,
   patch: Partial<BackdateState>,
+) => ({ ...state, ...patch });
+const mergeCompleteEventState = (
+  state: CompleteEventState,
+  patch: Partial<CompleteEventState>,
 ) => ({ ...state, ...patch });
 const mergeEditState = (state: EditState, patch: Partial<EditState>) => ({
   ...state,
@@ -238,6 +268,7 @@ const defaultQuickActions = quickActions.filter(({ kind }) => kind !== "water");
 const quickTimePresets = [5, 15, 30] as const;
 const walkPromptPresets = [1, 3, 5, 10, 15] as const;
 const walkDurationPresets = [10, 15, 20, 30, 45, 60] as const;
+const maxCompleteWalkEvents = 100;
 
 const walkFieldClassName = "field-control mt-2 w-full";
 const maxFutureMs = 5 * 60_000;
@@ -1897,6 +1928,638 @@ function EarlierTimePicker({
   );
 }
 
+const getIntervalMinutes = (
+  startedAt: number | null,
+  endedAt: number | null,
+) =>
+  startedAt !== null && endedAt !== null && endedAt > startedAt
+    ? Math.max(1, Math.round((endedAt - startedAt) / 60_000))
+    : null;
+
+function WalkBathroomTimeline({
+  durationMinutes,
+  markers,
+  onAdd,
+  onMove,
+  onRemove,
+  onSelect,
+  selectedMarker,
+  startedAt,
+  endedAt,
+  timeFormatter,
+}: {
+  durationMinutes: number | null;
+  markers: WalkPottyMarker[];
+  onAdd: (kind: WalkPottyMarker["kind"]) => void;
+  onMove: (offsetMinutes: number) => void;
+  onRemove: () => void;
+  onSelect: (id: number) => void;
+  selectedMarker: WalkPottyMarker | null;
+  startedAt: number | null;
+  endedAt: number | null;
+  timeFormatter: Intl.DateTimeFormat;
+}) {
+  const { t } = useTranslation("dashboard");
+  const markerLabel = (marker: WalkPottyMarker) =>
+    t("completeEvent.markerSummary", {
+      event: t(`events.${marker.kind}`),
+      offset: marker.offsetMinutes,
+      time:
+        startedAt === null
+          ? ""
+          : timeFormatter.format(startedAt + marker.offsetMinutes * 60_000),
+    });
+
+  return (
+    <div className="mt-5 rounded-lg border border-border bg-muted/50 p-4">
+      <h3 className="text-sm font-bold">{t("completeEvent.bathroomTitle")}</h3>
+      <p className="mt-1 text-xs leading-5 text-muted-foreground">
+        {t("completeEvent.bathroomHelp")}
+      </p>
+
+      <div
+        role="group"
+        aria-label={t("completeEvent.timelineAria")}
+        className="mt-4"
+      >
+        {durationMinutes === null ? (
+          <p className="rounded-lg bg-card px-3 py-4 text-center text-xs text-muted-foreground">
+            {t("completeEvent.timelineUnavailable")}
+          </p>
+        ) : (
+          <>
+            <div className="flex justify-between gap-3 text-xs font-medium text-muted-foreground">
+              <span>
+                {startedAt === null ? "" : timeFormatter.format(startedAt)}
+              </span>
+              <span>
+                {endedAt === null ? "" : timeFormatter.format(endedAt)}
+              </span>
+            </div>
+            <div className="relative mx-3 mt-4 h-10">
+              <div className="absolute inset-x-0 top-4 h-2 rounded-full bg-primary/20" />
+              <span className="absolute left-0 top-3 size-4 -translate-x-1/2 rounded-full border-2 border-card bg-primary" />
+              <span className="absolute right-0 top-3 size-4 translate-x-1/2 rounded-full border-2 border-card bg-primary" />
+              {markers.map((marker) => (
+                <button
+                  key={marker.id}
+                  type="button"
+                  data-activity-kind={marker.kind}
+                  aria-label={markerLabel(marker)}
+                  aria-pressed={selectedMarker?.id === marker.id}
+                  title={markerLabel(marker)}
+                  className="absolute top-0 grid size-10 -translate-x-1/2 place-items-center rounded-full border-2 border-card bg-[var(--activity-ink)] text-sm shadow-[var(--elevation-1)] outline-offset-2 ring-primary transition-transform duration-150 hover:scale-105 focus-visible:outline-2 focus-visible:outline-ring aria-pressed:ring-2"
+                  style={{
+                    left: `${(marker.offsetMinutes / durationMinutes) * 100}%`,
+                  }}
+                  onClick={() => onSelect(marker.id)}
+                >
+                  <span aria-hidden="true">
+                    {marker.kind === "pee" ? "💧" : "💩"}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </>
+        )}
+
+        {markers.length === 0 ? (
+          <p className="mt-2 text-center text-xs text-muted-foreground">
+            {t("completeEvent.emptyBathroom")}
+          </p>
+        ) : (
+          <ol
+            aria-label={t("completeEvent.eventsAria")}
+            className="mt-3 flex flex-wrap gap-2"
+          >
+            {markers.map((marker) => (
+              <li key={marker.id}>
+                <button
+                  type="button"
+                  data-activity-kind={marker.kind}
+                  aria-pressed={selectedMarker?.id === marker.id}
+                  className="min-h-9 rounded-full bg-[var(--activity-surface)] px-3 text-xs font-semibold text-[var(--activity-ink)] ring-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring aria-pressed:ring-2"
+                  onClick={() => onSelect(marker.id)}
+                >
+                  {markerLabel(marker)}
+                </button>
+              </li>
+            ))}
+          </ol>
+        )}
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-2">
+        <Button
+          type="button"
+          variant="secondary"
+          disabled={
+            durationMinutes === null || markers.length >= maxCompleteWalkEvents
+          }
+          className="px-3 text-sm"
+          onClick={() => onAdd("pee")}
+        >
+          <span aria-hidden="true">💧</span>
+          {t("completeEvent.addPee")}
+        </Button>
+        <Button
+          type="button"
+          variant="secondary"
+          disabled={
+            durationMinutes === null || markers.length >= maxCompleteWalkEvents
+          }
+          className="px-3 text-sm"
+          onClick={() => onAdd("poop")}
+        >
+          <span aria-hidden="true">💩</span>
+          {t("completeEvent.addPoop")}
+        </Button>
+      </div>
+
+      {selectedMarker !== null && durationMinutes !== null && (
+        <div className="mt-4 border-t border-border pt-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <label
+                htmlFor="complete-event-marker-position"
+                className="text-sm font-bold"
+              >
+                {t("completeEvent.moveSelected")}
+              </label>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {markerLabel(selectedMarker)}
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="quiet"
+              className="min-h-9 shrink-0 px-2 text-xs text-destructive"
+              onClick={onRemove}
+            >
+              {t("completeEvent.remove")}
+            </Button>
+          </div>
+          <input
+            id="complete-event-marker-position"
+            type="range"
+            min="0"
+            max={durationMinutes}
+            step="1"
+            value={selectedMarker.offsetMinutes}
+            aria-valuetext={markerLabel(selectedMarker)}
+            className="mt-3 h-11 w-full accent-primary"
+            onChange={(event) => onMove(Number(event.target.value))}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CompleteEventChoices({
+  disabled,
+  onOpen,
+}: {
+  disabled: boolean;
+  onOpen: (kind: CompleteEventKind) => void;
+}) {
+  const { t } = useTranslation("dashboard");
+  return (
+    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+      <button
+        type="button"
+        disabled={disabled}
+        data-activity-kind="sleep"
+        className="group min-h-20 rounded-lg border border-border bg-[var(--activity-surface)] px-4 py-3 text-left transition-colors duration-150 hover:border-[var(--activity-ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-60"
+        onClick={() => onOpen("sleep")}
+      >
+        <span className="flex items-center gap-3">
+          <span
+            aria-hidden="true"
+            className="text-xl text-[var(--activity-ink)]"
+          >
+            ☾
+          </span>
+          <span>
+            <strong className="block text-sm">
+              {t("completeEvent.sleepAction")}
+            </strong>
+            <span className="mt-0.5 block text-xs text-muted-foreground">
+              {t("completeEvent.sleepHint")}
+            </span>
+          </span>
+        </span>
+      </button>
+      <button
+        type="button"
+        disabled={disabled}
+        data-activity-kind="walk"
+        className="group min-h-20 rounded-lg border border-border bg-[var(--activity-surface)] px-4 py-3 text-left transition-colors duration-150 hover:border-[var(--activity-ink)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-60"
+        onClick={() => onOpen("walk")}
+      >
+        <span className="flex items-center gap-3">
+          <span
+            aria-hidden="true"
+            className="text-xl text-[var(--activity-ink)]"
+          >
+            ↗
+          </span>
+          <span>
+            <strong className="block text-sm">
+              {t("completeEvent.walkAction")}
+            </strong>
+            <span className="mt-0.5 block text-xs text-muted-foreground">
+              {t("completeEvent.walkHint")}
+            </span>
+          </span>
+        </span>
+      </button>
+    </div>
+  );
+}
+
+function CompleteEventIntervalFields({
+  dog,
+  durationMinutes,
+  endedAt,
+  errors,
+  locale,
+  onEndedAtChange,
+  onStartedAtChange,
+  startedAt,
+}: {
+  dog: DashboardDog;
+  durationMinutes: number | null;
+  endedAt: string;
+  errors: CompleteEventState["errors"];
+  locale: "en" | "sk";
+  onEndedAtChange: (value: string) => void;
+  onStartedAtChange: (value: string) => void;
+  startedAt: string;
+}) {
+  const { t } = useTranslation("dashboard");
+  return (
+    <>
+      <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        <div>
+          <label
+            htmlFor="complete-event-startedAt"
+            className="text-sm font-bold"
+          >
+            {t("completeEvent.startedAt")}
+          </label>
+          <input
+            id="complete-event-startedAt"
+            type="datetime-local"
+            step="60"
+            value={startedAt}
+            aria-invalid={Boolean(errors.startedAt)}
+            aria-describedby={
+              errors.startedAt
+                ? "complete-event-timezone complete-event-startedAt-error"
+                : "complete-event-timezone"
+            }
+            className="field-control mt-2 w-full"
+            onChange={(event) => onStartedAtChange(event.target.value)}
+          />
+          {errors.startedAt && (
+            <p
+              id="complete-event-startedAt-error"
+              className="mt-2 text-sm text-destructive"
+            >
+              {errors.startedAt}
+            </p>
+          )}
+        </div>
+        <div>
+          <label htmlFor="complete-event-endedAt" className="text-sm font-bold">
+            {t("completeEvent.endedAt")}
+          </label>
+          <input
+            id="complete-event-endedAt"
+            type="datetime-local"
+            step="60"
+            value={endedAt}
+            aria-invalid={Boolean(errors.endedAt)}
+            aria-describedby={
+              errors.endedAt
+                ? "complete-event-timezone complete-event-endedAt-error"
+                : "complete-event-timezone"
+            }
+            className="field-control mt-2 w-full"
+            onChange={(event) => onEndedAtChange(event.target.value)}
+          />
+          {errors.endedAt && (
+            <p
+              id="complete-event-endedAt-error"
+              className="mt-2 text-sm text-destructive"
+            >
+              {errors.endedAt}
+            </p>
+          )}
+        </div>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
+        <p id="complete-event-timezone">
+          {t("common.timezone", { timezone: dog.timezone })}
+        </p>
+        {durationMinutes !== null && (
+          <p>
+            {t("completeEvent.duration", {
+              duration: formatElapsed(durationMinutes * 60_000, locale),
+            })}
+          </p>
+        )}
+      </div>
+    </>
+  );
+}
+
+function CompleteEventBackfill({
+  disabled,
+  dog,
+  onLogged,
+  onOperationEnd,
+  onOperationStart,
+  timeFormatter,
+}: {
+  disabled: boolean;
+  dog: DashboardDog;
+  onLogged: (message: string) => void;
+  onOperationEnd: () => void;
+  onOperationStart: () => boolean;
+  timeFormatter: Intl.DateTimeFormat;
+}) {
+  const { i18n, t } = useTranslation("dashboard");
+  const logRestInterval = useMutation(api.events.logRestInterval);
+  const createCompleteWalk = useMutation(api.walks.createComplete);
+  const markerId = useRef(0);
+  const submitting = useRef(false);
+  const [form, updateForm] = useReducer(
+    mergeCompleteEventState,
+    initialCompleteEventState,
+  );
+  const {
+    endedAt,
+    errors,
+    formError,
+    isPending,
+    kind,
+    markers,
+    selectedMarkerId,
+    startedAt,
+  } = form;
+  const parsedStartedAt = parseZonedDateTimeLocal(startedAt, dog.timezone);
+  const parsedEndedAt = parseZonedDateTimeLocal(endedAt, dog.timezone);
+  const durationMinutes = getIntervalMinutes(parsedStartedAt, parsedEndedAt);
+  const selectedMarker =
+    markers.find(({ id }) => id === selectedMarkerId) ?? null;
+  const locale = resolveBrowserLocale([i18n.resolvedLanguage ?? i18n.language]);
+
+  const reset = () => updateForm(initialCompleteEventState);
+  const open = (nextKind: CompleteEventKind) => {
+    const now = getCurrentTime();
+    const defaultMinutes = nextKind === "sleep" ? 60 : 30;
+    updateForm({
+      ...initialCompleteEventState,
+      kind: nextKind,
+      startedAt:
+        formatZonedDateTimeLocal(now - defaultMinutes * 60_000, dog.timezone) ??
+        "",
+      endedAt: formatZonedDateTimeLocal(now, dog.timezone) ?? "",
+    });
+  };
+  const clampMarkers = (nextStartedAt: string, nextEndedAt: string) => {
+    const nextDuration = getIntervalMinutes(
+      parseZonedDateTimeLocal(nextStartedAt, dog.timezone),
+      parseZonedDateTimeLocal(nextEndedAt, dog.timezone),
+    );
+    if (nextDuration === null) return;
+    updateForm({
+      markers: markers.map((marker) => ({
+        ...marker,
+        offsetMinutes: Math.min(marker.offsetMinutes, nextDuration),
+      })),
+    });
+  };
+  const changeStartedAt = (value: string) => {
+    updateForm({
+      startedAt: value,
+      errors: { ...errors, startedAt: "" },
+    });
+    clampMarkers(value, endedAt);
+  };
+  const changeEndedAt = (value: string) => {
+    updateForm({
+      endedAt: value,
+      errors: { ...errors, endedAt: "" },
+    });
+    clampMarkers(startedAt, value);
+  };
+  const addMarker = (markerKind: WalkPottyMarker["kind"]) => {
+    if (durationMinutes === null || markers.length >= maxCompleteWalkEvents) {
+      return;
+    }
+    markerId.current += 1;
+    const marker = {
+      id: markerId.current,
+      kind: markerKind,
+      offsetMinutes: Math.round(
+        durationMinutes * (markerKind === "pee" ? 1 / 3 : 2 / 3),
+      ),
+    };
+    updateForm({
+      markers: [...markers, marker],
+      selectedMarkerId: marker.id,
+    });
+  };
+  const moveSelectedMarker = (offsetMinutes: number) => {
+    if (selectedMarkerId === null) return;
+    updateForm({
+      markers: markers.map((marker) =>
+        marker.id === selectedMarkerId ? { ...marker, offsetMinutes } : marker,
+      ),
+    });
+  };
+  const removeSelectedMarker = () => {
+    if (selectedMarkerId === null) return;
+    const next = markers.filter(({ id }) => id !== selectedMarkerId);
+    updateForm({
+      markers: next,
+      selectedMarkerId: next[0]?.id ?? null,
+    });
+  };
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (kind === null || submitting.current) return;
+    const now = getCurrentTime();
+    const nextErrors = {
+      startedAt: getTimestampError(startedAt, parsedStartedAt, dog, now, t),
+      endedAt:
+        getTimestampError(endedAt, parsedEndedAt, dog, now, t) ||
+        (parsedStartedAt !== null &&
+        parsedEndedAt !== null &&
+        parsedEndedAt <= parsedStartedAt
+          ? t("completeEvent.endAfterStart")
+          : ""),
+    };
+    updateForm({ errors: nextErrors, formError: "" });
+    const firstError = (["startedAt", "endedAt"] as const).find(
+      (field) => nextErrors[field],
+    );
+    if (firstError) {
+      document.getElementById(`complete-event-${firstError}`)?.focus();
+      return;
+    }
+    if (parsedStartedAt === null || parsedEndedAt === null) return;
+    if (!onOperationStart()) return;
+
+    submitting.current = true;
+    updateForm({ isPending: true });
+    try {
+      if (kind === "sleep") {
+        await logRestInterval({
+          dogId: dog._id,
+          startedAt: parsedStartedAt,
+          endedAt: parsedEndedAt,
+        });
+      } else {
+        await createCompleteWalk({
+          dogId: dog._id,
+          walkStartedAt: parsedStartedAt,
+          walkEndedAt: parsedEndedAt,
+          pottyEvents: markers.map((marker) => ({
+            kind: marker.kind,
+            at: parsedStartedAt + marker.offsetMinutes * 60_000,
+          })),
+        });
+      }
+      const event = t(
+        kind === "sleep"
+          ? "completeEvent.sleepAction"
+          : "completeEvent.walkAction",
+      );
+      reset();
+      onLogged(t("completeEvent.logged", { dogName: dog.name, event }));
+    } catch (caught) {
+      updateForm({
+        formError: hasErrorCode(caught, "INVALID_REST_TRANSITION")
+          ? t("completeEvent.restConflict")
+          : hasErrorCode(caught, "INVALID_WALK_INTERVAL")
+            ? t("completeEvent.walkOverlap")
+            : hasErrorCode(caught, "WALK_EVENT_LIMIT")
+              ? t("completeEvent.eventLimit")
+              : hasErrorCode(caught, "INVALID_TIMESTAMP") ||
+                  hasErrorCode(caught, "INVALID_WALK_TIMESTAMP")
+                ? t("common.timestampRange")
+                : t("completeEvent.saveError"),
+      });
+    } finally {
+      submitting.current = false;
+      updateForm({ isPending: false });
+      onOperationEnd();
+    }
+  };
+
+  return (
+    <section
+      aria-labelledby="complete-event-title"
+      className="mt-4 rounded-xl border border-border bg-card p-4 sm:p-5"
+    >
+      <div>
+        <h2 id="complete-event-title" className="text-base font-bold">
+          {t("completeEvent.title")}
+        </h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {t("completeEvent.help")}
+        </p>
+      </div>
+
+      {kind === null ? (
+        <CompleteEventChoices disabled={disabled} onOpen={open} />
+      ) : (
+        <form
+          aria-label={t(
+            kind === "sleep"
+              ? "completeEvent.sleepAria"
+              : "completeEvent.walkAria",
+          )}
+          aria-busy={isPending}
+          className="mt-4 border-t border-border pt-4"
+          noValidate
+          onSubmit={(event) => void submit(event)}
+        >
+          <fieldset disabled={disabled || isPending}>
+            <legend className="text-lg font-bold">
+              {t(
+                kind === "sleep"
+                  ? "completeEvent.sleepTitle"
+                  : "completeEvent.walkTitle",
+              )}
+            </legend>
+            <p className="mt-1 text-sm text-muted-foreground">
+              {t(
+                kind === "sleep"
+                  ? "completeEvent.sleepDescription"
+                  : "completeEvent.walkDescription",
+                { dogName: dog.name },
+              )}
+            </p>
+            <CompleteEventIntervalFields
+              dog={dog}
+              durationMinutes={durationMinutes}
+              endedAt={endedAt}
+              errors={errors}
+              locale={locale}
+              onEndedAtChange={changeEndedAt}
+              onStartedAtChange={changeStartedAt}
+              startedAt={startedAt}
+            />
+
+            {kind === "walk" && (
+              <WalkBathroomTimeline
+                durationMinutes={durationMinutes}
+                endedAt={parsedEndedAt}
+                markers={markers}
+                onAdd={addMarker}
+                onMove={moveSelectedMarker}
+                onRemove={removeSelectedMarker}
+                onSelect={(id) => updateForm({ selectedMarkerId: id })}
+                selectedMarker={selectedMarker}
+                startedAt={parsedStartedAt}
+                timeFormatter={timeFormatter}
+              />
+            )}
+
+            {formError && (
+              <p
+                role="alert"
+                className="mt-4 rounded-lg border border-destructive/25 bg-background px-4 py-3 text-sm text-destructive"
+              >
+                {formError}
+              </p>
+            )}
+            <div className="mt-5 grid gap-3 sm:grid-cols-[auto_1fr]">
+              <Button type="button" variant="secondary" onClick={reset}>
+                {t("common.cancel")}
+              </Button>
+              <Button type="submit">
+                {isPending
+                  ? t("common.saving")
+                  : t(
+                      kind === "sleep"
+                        ? "completeEvent.saveSleep"
+                        : "completeEvent.saveWalk",
+                    )}
+              </Button>
+            </div>
+          </fieldset>
+        </form>
+      )}
+    </section>
+  );
+}
+
 function QuickLogSection({
   activeWalk,
   dog,
@@ -2615,6 +3278,17 @@ function QuickLogSection({
           </form>
         )}
       </dialog>
+
+      {isEarlier && (
+        <CompleteEventBackfill
+          disabled={isBusy}
+          dog={dog}
+          onLogged={onWalkTransition}
+          onOperationEnd={onBackdateOperationEnd}
+          onOperationStart={onBackdateOperationStart}
+          timeFormatter={timeFormatter}
+        />
+      )}
 
       <BackdateForm
         key={`backdate-${activeWalkKey}`}
